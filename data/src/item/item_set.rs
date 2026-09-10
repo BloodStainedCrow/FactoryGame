@@ -14,7 +14,9 @@ impl ItemSet {
 
     #[must_use]
     pub const fn all() -> Self {
-        todo!()
+        Self {
+            item: Some(Item(0)),
+        }
     }
 
     #[must_use]
@@ -84,5 +86,9 @@ impl ItemSet {
             Some(item) => Ok(item),
             None => Err(None),
         }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = Item> {
+        self.item.into_iter()
     }
 }

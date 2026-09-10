@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use crate::Backend;
+use crate::{Backend, power_grid::inserter::store::InserterStore};
 use data::entity::assember::Recipe;
 use middle_indices::{AssemblerMiddleID, PowerGridMiddleID};
 use stable_vec::StableVec;
@@ -20,7 +20,8 @@ pub struct PowerGridBackendID(usize);
 #[derive(Debug, Clone)]
 pub(super) struct PowerGrid {
     middle_id: PowerGridMiddleID,
-    assemblers: HashMap<Recipe, StableVec<SingleRecipeAssemblerInfo>>,
+    assemblers: BTreeMap<Recipe, StableVec<SingleRecipeAssemblerInfo>>,
+    inserters: InserterStore,
 }
 
 #[derive(Debug, Clone)]

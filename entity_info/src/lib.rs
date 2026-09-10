@@ -1,8 +1,11 @@
 use data::{
-    entity::{GlobalTy, assember::AssemblerTy, chest::ChestTy, power_pole::PowerPoleTy},
+    entity::{
+        GlobalTy, assember::AssemblerTy, chest::ChestTy, inserter::InserterTy,
+        power_pole::PowerPoleTy,
+    },
     spacial::{Flipped, Position, Rotation},
 };
-use middle_indices::{AssemblerMiddleID, ChestMiddleID, PowerPoleMiddleID};
+use middle_indices::{AssemblerMiddleID, ChestMiddleID, InserterMiddleID, PowerPoleMiddleID};
 
 #[derive(Debug)]
 pub struct EntityInfo {
@@ -20,6 +23,7 @@ impl EntityInfo {
             EntityInfoKind::Assembler { ty, .. } => ty.into(),
             EntityInfoKind::PowerPole { ty, .. } => ty.into(),
             EntityInfoKind::Chest { ty, .. } => ty.into(),
+            EntityInfoKind::Inserter { ty, .. } => ty.into(),
         }
     }
 
@@ -29,6 +33,7 @@ impl EntityInfo {
             EntityInfoKind::Assembler { ty, .. } => true,
             EntityInfoKind::PowerPole { .. } => false,
             EntityInfoKind::Chest { .. } => false,
+            EntityInfoKind::Inserter { .. } => true,
         }
     }
 }
@@ -49,5 +54,9 @@ pub enum EntityInfoKind {
     Chest {
         ty: ChestTy,
         middle_id: ChestMiddleID,
+    },
+    Inserter {
+        ty: InserterTy,
+        middle_id: InserterMiddleID,
     },
 }

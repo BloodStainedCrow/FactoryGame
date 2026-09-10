@@ -19,11 +19,12 @@ pub(crate) struct InserterInfo {
     // NOTE: Each inserter belonges to a power grid. There will be a special power grid that holds all the actually unconnected entities
     pub(crate) power_grid_id: PowerGridMiddleID,
 
-    sources: [Option<Conn>; MAX_CONN_COUNT],
-    dest: Conn,
-    inferred_items: ItemSet,
+    pub(crate) sources: [Option<Conn>; MAX_CONN_COUNT],
+    pub(crate) dest: Conn,
+    pub(crate) inferred_items: ItemSet,
+    pub(crate) movetime: u16,
 
-    user_filter: (),
+    pub(crate) user_filter: (),
 }
 
 #[derive(Debug)]
@@ -33,6 +34,7 @@ pub struct InserterAdditionInfo {
     pub sources: Vec<Conn>,
     pub dest: Conn,
     pub item_filter: ItemSet,
+    pub movetime: u16,
 }
 
 impl Middle {
@@ -77,15 +79,22 @@ impl Middle {
             match backend.add_inserter(backend::power_grid::inserter::InserterAdditionInfo {
                 power_grid: self.power_grid_list[info.power_grid_id.0 as usize].backend_id,
                 middle_id: InserterMiddleID(next_index),
-                source: todo!(),
-                dest: todo!(),
-                items,
+                source: info
+                    .sources
+                    .iter()
+                    .map(|conn| self.get_backend_conn(*conn))
+                    .collect(),
+                dest: self.get_backend_conn(info.dest),
+                movetime: info.movetime,
+                items: items.clone(),
             }) {
                 backend::AdditionResult::Added {
                     new_id,
                     relocations,
                 } => {
-                    todo!("Handle relocations");
+                    if !relocations.is_empty() {
+                        todo!("Handle relocations");
+                    }
                     new_id
                 },
                 backend::AdditionResult::Failed { info } => todo!(),
@@ -97,7 +106,8 @@ impl Middle {
 
             sources: info
                 .sources
-                .into_iter()
+                .iter()
+                .copied()
                 .map(Option::Some)
                 .chain(iter::repeat(None))
                 .take(MAX_CONN_COUNT)
@@ -105,6 +115,8 @@ impl Middle {
                 .unwrap(),
             dest: info.dest,
             inferred_items: items,
+
+            movetime: info.movetime,
 
             user_filter: (),
         });

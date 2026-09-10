@@ -38,6 +38,7 @@ impl EntityDescriptor {
             EntityDescriptorKind::PowerPole { .. } => false,
             EntityDescriptorKind::SolarPanel { .. } => true,
             EntityDescriptorKind::Chest { .. } => false,
+            EntityDescriptorKind::Inserter { .. } => true,
         }
     }
 

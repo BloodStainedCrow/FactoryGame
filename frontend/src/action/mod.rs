@@ -126,7 +126,7 @@ impl GameState {
                         surface.add_chest(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::Inserter { ty } => {
-                        // TODO:
+                        surface.add_inserter(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::Belt { ty } => {
                         // TODO:

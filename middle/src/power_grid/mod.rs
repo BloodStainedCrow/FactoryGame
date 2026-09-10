@@ -47,16 +47,10 @@ impl Middle {
         let kept_back = self.power_grid_list[kept.0 as usize].backend_id;
         let removed_back = self.power_grid_list[removed.0 as usize].backend_id;
 
-        let PowerGridMergeResult {
-            kept_id,
-            assemblers_which_are_now_in_this_grid: changed_assembler_ids,
-        } = backend.merge_power_grids(kept_back, removed_back);
+        let res = backend.merge_power_grids(kept_back, removed_back);
 
-        assert_eq!(kept_back, kept_id);
+        assert_eq!(kept_back, res.kept_id);
 
-        PowerGridMergeResult {
-            kept_id,
-            assemblers_which_are_now_in_this_grid: changed_assembler_ids,
-        }
+        res
     }
 }

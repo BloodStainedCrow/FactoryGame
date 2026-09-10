@@ -20,6 +20,22 @@ impl<T> Bucket<T> {
         self.values.push_back(value);
     }
 
+    pub fn remove_first(&mut self, filter: impl Fn(&T) -> bool) -> Option<T> {
+        let pos = self.values.iter().position(filter)?;
+
+        // Adjust sizes
+        // TODO: TEST THIS
+        let mut current = 0;
+        for sizes in &mut self.sizes {
+            current += *sizes;
+            if current < pos as u32 {
+                *sizes -= 1;
+            }
+        }
+
+        Some(self.values.remove(pos).unwrap())
+    }
+
     pub fn advance(&mut self) -> impl Iterator<Item = T> {
         let count = self.sizes[0] as usize;
 

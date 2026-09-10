@@ -9,9 +9,14 @@ use crate::{
     api::{
         ModData,
         entity::{
-            assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, power_pole::PowerPoleInfo,
+            assembler::AssemblerInfo,
+            belt::BeltInfo,
+            chest::ChestInfo,
+            inserter::{InserterInfo, InserterMovementTime},
+            power_pole::PowerPoleInfo,
         },
     },
+    energy::{EnergySource, Watt},
     entity::{GlobalTy, PlacementRules, power_pole::PowerPoleData},
     spacial::Extent,
 };
@@ -74,7 +79,31 @@ struct DataStore {
 static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
     DataStore::from_mods(&[ModData {
         mod_name: ModIdentifier("factory_game".to_string()),
-        inserters: vec![],
+        inserters: vec![InserterInfo {
+            entity_info: api::entity::EntityInfo {
+                size: Extent::single_tile(),
+                can_be_rotated: true,
+                can_be_flipped: false,
+                name: EntityName("bulk_inserter".to_string()),
+                display_name: "Bulk Inserter".to_string(),
+                placement_rules: PlacementRules::no_restriction(),
+            },
+            source_offset: spacial::Offset {
+                x_offs: 0,
+                y_offs: -1,
+            },
+            dest_offset: spacial::Offset {
+                x_offs: 0,
+                y_offs: 1,
+            },
+            movetime: InserterMovementTime::RotationPerSecond { degrees: 864.0 },
+            energy_source: EnergySource::ElectricEnergy {
+                drain: Watt(1000),
+                active_energy: Watt(169_000),
+            },
+            filter_count: 5,
+            hand_size_bonus: 1,
+        }],
         power_poles: vec![
             PowerPoleInfo {
                 entity_info: api::entity::EntityInfo {

@@ -1,10 +1,12 @@
 use std::num::NonZero;
 
 use data::item::{Item, ItemCountType};
+use itertools::Either;
+use stable_vec::StableVec;
 use static_assertions::const_assert_eq;
 
 use crate::{
-    inserter::bucket::Bucket,
+    inserter::{bucket::Bucket, pure::State::Incoming},
     power_grid::{
         inserter::InserterBackendID,
         power_mult::{AdvanceResult, PowerMult, PowerMultTimer},
@@ -23,7 +25,7 @@ pub(crate) struct PureOneToOneInserterStore {
     /// The percentage we are done with advancing a single tick
     timer: PowerMultTimer,
 
-    inserters: Vec<InserterState>,
+    inserters: StableVec<InserterState>,
 
     incoming_buckets: Bucket<InserterBucketInfo>,
     outgoing_buckets: Bucket<InserterBucketInfo>,
@@ -40,12 +42,14 @@ struct InserterState {
     state: State,
 }
 
-pub enum MovingInserterRenderState {
+pub enum InserterRenderState {
+    WaitingForItems(ItemCountType),
     FullAndMovingOut(ItemCountType, f32),
+    WaitingForSpaceInDestination(ItemCountType),
     EmptyAndMovingBack(f32),
 }
 
-impl From<(InserterState, u16, u16)> for MovingInserterRenderState {
+impl From<(InserterState, u16, u16)> for InserterRenderState {
     fn from((state, current_time, movetime): (InserterState, u16, u16)) -> Self {
         let time_passed = state.time_updated.wrapping_sub(current_time);
 
@@ -71,12 +75,65 @@ struct InserterBucketInfo {
     id: InserterBackendID,
     source: SingleItemSlotIndex,
     sink: SingleItemSlotIndex,
-    // TODO: We still have 2 bytes of room
+    hand_size: ItemCountType,
     hand_count: ItemCountType,
 }
 const_assert_eq!(std::mem::size_of::<InserterBucketInfo>(), 16);
 
+pub(crate) struct InserterRemovalInfoMoving {}
+pub(crate) struct InserterRemovalInfoStatic {}
+
 impl PureOneToOneInserterStore {
+    pub fn new(item: Item, movetime: u16) -> Self {
+        Self {
+            item,
+            movetime,
+            timer: PowerMultTimer(0),
+            inserters: vec![].into(),
+            incoming_buckets: Bucket::new(usize::from(movetime)),
+            outgoing_buckets: Bucket::new(usize::from(movetime)),
+        }
+    }
+
+    pub fn add_inserter(&mut self) -> InserterBackendID {
+        let index = self.inserters.push(InserterState {
+            time_updated: self.timer.0 as u16,
+            state: Incoming,
+        });
+
+        InserterBackendID(index.try_into().expect("More than u32::MAX inserters"))
+    }
+
+    pub fn remove_inserter(
+        &mut self,
+        id: InserterBackendID,
+        token_already_removed: bool,
+    ) -> Either<InserterRemovalInfoMoving, InserterRemovalInfoStatic> {
+        let inserter = self
+            .inserters
+            .remove(id.0 as usize)
+            .expect("Tried to remove inserter that did not exist");
+
+        if !token_already_removed {
+            let state = self.get_state_after_checking_waitlist(id);
+            match state {
+                // TODO: We should be able to calculate the bucket
+                InserterRenderState::FullAndMovingOut(_, _) => {
+                    let bucket_info = self
+                        .outgoing_buckets
+                        .remove_first(|b| b.id == id)
+                        .expect("Where else would it be?");
+
+                    Either::Left(InserterRemovalInfoMoving {})
+                },
+                InserterRenderState::EmptyAndMovingBack(_) => todo!(),
+                _ => unreachable!(),
+            }
+        } else {
+            Either::Right(InserterRemovalInfoStatic {})
+        }
+    }
+
     pub fn update(&mut self, power_mult: PowerMult, single_item_slice: &mut SingleItemSlice) {
         match self.timer.advance(power_mult) {
             AdvanceResult::Tick => {},
@@ -99,7 +156,7 @@ impl PureOneToOneInserterStore {
     pub fn get_state_after_checking_waitlist(
         &self,
         inserter: InserterBackendID,
-    ) -> MovingInserterRenderState {
+    ) -> InserterRenderState {
         let state = self.inserters[inserter.0 as usize];
 
         (state, self.timer.0 as u16, self.movetime).into()

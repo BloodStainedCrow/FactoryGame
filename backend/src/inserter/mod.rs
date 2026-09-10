@@ -1,2 +1,2 @@
-pub(self) mod bucket;
-mod pure;
+pub(crate) mod bucket;
+pub(crate) mod pure;

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use backend::Backend;
 use data::{
     entity::{
@@ -5,9 +7,11 @@ use data::{
         assember::{AssemblerTy, default_recipe},
         bounding_box,
         chest::{ChestTy, num_slots},
+        inserter::{InserterTy, get_input_position, get_output_position},
         power_pole::{PowerPoleTy, power_pole_supply_area, power_pole_wire_connection_area},
     },
-    spacial::{BoundingBox, Flipped, Position, Rotation},
+    item::item_set::ItemSet,
+    spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use entity_info::{EntityInfo, EntityInfoKind};
 use itertools::Itertools;
@@ -15,8 +19,10 @@ use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
     assembler::AssemblerAdditionInfo,
     chest::ChestAdditionInfo,
+    inserter::InserterAdditionInfo,
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
 };
+use middle_indices::ChestMiddleID;
 use smallvec::SmallVec;
 use thiserror::Error;
 
@@ -26,6 +32,7 @@ use crate::{
 };
 
 mod belt_logic;
+mod inserter_logic;
 mod pipe_logic;
 mod power_pole_logic;
 mod world;
@@ -33,6 +40,8 @@ mod world;
 // TODO: This should probably not live in the frontend IMO
 #[derive(Debug, Clone)]
 pub struct Surface {
+    floor_chests: BTreeMap<Position, ChestMiddleID>,
+
     world: SurfaceWorld,
     middle: Middle,
     backend: Backend,
@@ -62,6 +71,8 @@ impl Surface {
         let mut backend = Backend::new();
 
         Self {
+            floor_chests: BTreeMap::new(),
+
             world: SurfaceWorld::new_with_empty_area(options.generated_area),
             middle: Middle::new(&mut backend),
             backend,
@@ -80,7 +91,10 @@ impl Surface {
                         ty: desc.ty.try_into().expect("Assembler with non AssemblerTy"),
                         middle_id: id,
                     },
-                    EntityDescriptorKind::Inserter { id } => todo!(),
+                    EntityDescriptorKind::Inserter { id } => EntityInfoKind::Inserter {
+                        ty: desc.ty.try_into().expect("Inserter with non InserterTy"),
+                        middle_id: id,
+                    },
                     EntityDescriptorKind::Belt { id } => todo!(),
                     EntityDescriptorKind::Pipe { id } => todo!(),
                     EntityDescriptorKind::Chest { id } => EntityInfoKind::Chest {
@@ -98,6 +112,12 @@ impl Surface {
                     EntityDescriptorKind::SolarPanel {} => todo!(),
                 },
             })
+    }
+
+    pub(crate) fn get_entity_at(&self, position: Position) -> Option<EntityDescriptor> {
+        self.world
+            .get_entities_in_area(BoundingBox::new(position, Extent::single_tile()))
+            .next()
     }
 
     fn follows_rules(
@@ -163,6 +183,7 @@ impl Surface {
         let middle_assembler_id = self.middle.add_assembler(
             &AssemblerAdditionInfo {
                 recipe: default_recipe,
+                // TODO:
                 power_grid: UNATTACHED_POWER_GRID_ID,
             },
             &mut self.backend,
@@ -210,6 +231,56 @@ impl Surface {
             flipped,
             ty: ty.into(),
             kind: EntityDescriptorKind::Chest {
+                id: middle_chest_id,
+            },
+        });
+
+        Ok(())
+    }
+
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_inserter(
+        &mut self,
+        ty: InserterTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add inserter with ty {ty:?} at {top_left:?}");
+        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+
+        // Placement is allowed. Do the placing
+
+        // TODO: Get power grid
+        let power_grid_id = UNATTACHED_POWER_GRID_ID;
+
+        let source_pos = get_input_position(ty, top_left, rotation, flipped);
+        let dest_pos = get_output_position(ty, top_left, rotation, flipped);
+
+        assert!(source_pos != dest_pos);
+
+        let source_conn = self.get_source_conns_or_add_floor_conn(source_pos);
+        let dest_conn = self.get_dest_conns_or_add_floor_conn(dest_pos);
+
+        let middle_chest_id = self.middle.add_inserter(
+            &InserterAdditionInfo {
+                power_grid_id,
+                sources: source_conn,
+                dest: dest_conn.unwrap(),
+                item_filter: ItemSet::all(),
+                // TODO:
+                movetime: 100,
+            },
+            &mut self.backend,
+        );
+
+        self.world.add_entity(EntityDescriptor {
+            position: top_left,
+            rotation,
+            flipped,
+            ty: ty.into(),
+            kind: EntityDescriptorKind::Inserter {
                 id: middle_chest_id,
             },
         });

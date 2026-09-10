@@ -10,7 +10,7 @@ use crate::{
 pub(crate) mod sushi;
 
 #[derive(Debug, Clone, Copy)]
-pub struct ChestBackendID(u32);
+pub struct ChestBackendID(pub(crate) u32);
 
 #[derive(Debug, Clone, Copy)]
 pub struct FullChestIdentifier<'a> {

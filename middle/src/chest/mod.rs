@@ -1,4 +1,4 @@
-use backend::Backend;
+use backend::{AdditionResult, Backend, chests::ChestBackendID};
 use data::item::item_set::ItemSet;
 use middle_indices::{ChestMiddleID, InserterMiddleID};
 use smallvec::SmallVec;
@@ -7,6 +7,7 @@ use crate::Middle;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ChestInfo {
+    pub(crate) backend_id: ChestBackendID,
     pub(crate) inferred_items: ItemSet,
 
     pub(crate) connected_inserters: SmallVec<[InserterMiddleID; 4]>,
@@ -15,6 +16,7 @@ pub(crate) struct ChestInfo {
 #[derive(Debug)]
 pub struct ChestAdditionInfo {
     pub num_slots: u16,
+    // TODO: Slot count override
 }
 
 impl Middle {
@@ -28,14 +30,27 @@ impl Middle {
             num_slots: num_slots,
         });
 
-        let real_index = self.chest_list.push(ChestInfo {
-            inferred_items: ItemSet::empty(),
-            connected_inserters: vec![].into(),
-        });
+        match backend_id {
+            AdditionResult::Added {
+                new_id,
+                relocations,
+            } => {
+                if !relocations.is_empty() {
+                    todo!("Handle relocations")
+                }
 
-        assert_eq!(index, real_index);
+                let real_index = self.chest_list.push(ChestInfo {
+                    backend_id: new_id,
+                    inferred_items: ItemSet::empty(),
+                    connected_inserters: vec![].into(),
+                });
 
-        ChestMiddleID(index.try_into().expect("More than u32::MAX chests"))
+                assert_eq!(index, real_index);
+
+                ChestMiddleID(index.try_into().expect("More than u32::MAX chests"))
+            },
+            AdditionResult::Failed { info } => todo!(),
+        }
     }
 
     /// The chest must not be connected to any inserters

@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use backend::Backend;
+use backend::{
+    Backend,
+    chests::FullChestIdentifier,
+    power_grid::{assembler::FullAssemblerIdentifier, inserter::conn::BackendInserterConnection},
+};
 use data::{
     item::item_set::ItemSet,
     recipe::{get_items_consumed_by_recipe, get_items_produced_by_recipe},
@@ -37,6 +41,25 @@ impl TryFrom<Conn> for Container {
 }
 
 impl Middle {
+    pub(crate) fn get_backend_conn(&self, conn: Conn) -> BackendInserterConnection {
+        match conn {
+            Conn::Assembler { id } => BackendInserterConnection::Assembler {
+                ident: FullAssemblerIdentifier {
+                    recipe: self.get_assembler_recipe(id),
+                    grid: self.power_grid_list[self.get_assembler_power_grid(id).0 as usize]
+                        .backend_id,
+                    assembler_id: self.assembler_list[id.0 as usize].backend_id,
+                },
+            },
+            Conn::Chest { id } => BackendInserterConnection::Chest {
+                ident: FullChestIdentifier {
+                    items: &self.chest_list[id.0 as usize].inferred_items,
+                    id: self.chest_list[id.0 as usize].backend_id,
+                },
+            },
+        }
+    }
+
     /// The items that an inserter could take from this Conn.
     /// Typically this is dependent on either what a machine produces, or what can reach a container type entity
     pub(super) fn get_items_takeable_from(&self, conn: Conn) -> ItemSet {
@@ -89,7 +112,10 @@ impl Middle {
             &mut edge_changes,
         );
 
-        todo!("Apply changes to self and backend")
+        if container_changes.is_empty() && edge_changes.is_empty() {
+        } else {
+            todo!("Apply changes to self and backend")
+        }
     }
 
     fn apply_effect_of_new_edge_internal(
@@ -100,7 +126,24 @@ impl Middle {
         container_changes: &mut HashMap<Container, ItemSet>,
         edge_changes: &mut HashMap<Edge, ItemSet>,
     ) {
-        todo!()
+        let Ok(destination_container) = dest.try_into() else {
+            return;
+        };
+
+        let current_destination_items = self.get_item_in_container(destination_container);
+
+        if ItemSet::is_subset(current_destination_items, item_filter) {
+            return;
+        } else {
+            let mut destination_items = current_destination_items.clone();
+            destination_items.union(item_filter);
+            container_changes.insert(destination_container, destination_items);
+            self.container_content_has_changed(
+                destination_container,
+                container_changes,
+                edge_changes,
+            );
+        }
     }
 
     fn container_content_has_changed(

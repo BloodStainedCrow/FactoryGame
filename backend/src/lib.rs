@@ -5,6 +5,7 @@ use stable_vec::StableVec;
 use crate::{chests::sushi::SushiChest, power_grid::PowerGrid};
 
 pub mod chests;
+mod graph_changes;
 mod inserter;
 pub mod liquid;
 pub mod power_grid;

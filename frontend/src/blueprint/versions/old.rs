@@ -5,7 +5,8 @@ use base64::engine::general_purpose::STANDARD;
 use data::{
     EntityIdentifier,
     entity::{
-        GlobalTy, assember::AssemblerTy, belt::BeltTy, chest::ChestTy, power_pole::PowerPoleTy,
+        GlobalTy, assember::AssemblerTy, belt::BeltTy, chest::ChestTy, inserter::InserterTy,
+        power_pole::PowerPoleTy,
     },
     spacial::{Direction, Flipped, Position, Rotation},
 };
@@ -250,10 +251,30 @@ impl Into<super::Blueprint> for Blueprint {
                             filter,
                             movetime,
                             ty,
-                        } => {
-                            // TODO:
-                            None
-                        },
+                        } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: match dir {
+                                        Dir::North => Rotation::North,
+                                        Dir::East => Rotation::East,
+                                        Dir::South => Rotation::South,
+                                        Dir::West => Rotation::West,
+                                    },
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::Inserter {
+                                        ty: InserterTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not an inserter"),
+                                    },
+                                },
+                            },
+                        ),
                         BlueprintPlaceEntity::Belt {
                             pos,
                             direction,

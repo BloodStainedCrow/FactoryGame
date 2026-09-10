@@ -1,6 +1,9 @@
 use backend::{
     Backend,
-    power_grid::{addition::PowerGridAdditionInfo, assembler::FullAssemblerIdentifier},
+    power_grid::{
+        addition::PowerGridAdditionInfo, assembler::FullAssemblerIdentifier,
+        inserter::FullInserterIdentifier, merge::PowerGridMergeResult,
+    },
 };
 use data::spacial::Position;
 use entity_info::{EntityInfo, EntityInfoKind};
@@ -114,13 +117,36 @@ impl Middle {
                         continue;
                     }
 
-                    let result = self.merge_power_grids(kept, removed, backend);
+                    let PowerGridMergeResult {
+                        kept_id: _,
+                        assemblers_which_are_now_in_this_grid,
+                        inserters_which_are_now_in_this_grid,
+                    } = self.merge_power_grids(kept, removed, backend);
 
-                    for relocation in result.assemblers_which_are_now_in_this_grid {
+                    for relocation in assemblers_which_are_now_in_this_grid {
                         let assembler = &mut self.assembler_list[relocation.middle.0 as usize];
 
                         assembler.backend_id = relocation.new_backend;
                         assembler.power_grid_id = kept;
+                    }
+
+                    {
+                        assert!(
+                            self.assembler_list
+                                .iter()
+                                .all(|(_, info)| info.power_grid_id != removed),
+                            "{:?}",
+                            self.assembler_list
+                                .iter()
+                                .find(|(_, info)| info.power_grid_id == removed)
+                        );
+                    }
+
+                    for relocation in inserters_which_are_now_in_this_grid {
+                        let inserter = &mut self.inserter_list[relocation.middle.0 as usize];
+
+                        inserter.backend_id = relocation.new_backend;
+                        inserter.power_grid_id = kept;
                     }
 
                     {
@@ -281,7 +307,7 @@ impl Middle {
     fn make_entity_powered_by_grid(
         &mut self,
         entity: EntityInfo,
-        grid: PowerGridMiddleID,
+        new_grid: PowerGridMiddleID,
         backend: &mut Backend,
     ) {
         match entity.kind {
@@ -297,15 +323,54 @@ impl Middle {
                         grid: current_grid_backend,
                         assembler_id: info.backend_id,
                     },
-                    self.power_grid_list[grid.0 as usize].backend_id,
+                    self.power_grid_list[new_grid.0 as usize].backend_id,
                 ) {
                     backend::AdditionResult::Added {
                         new_id,
                         relocations,
                     } => {
                         info.backend_id = new_id;
-                        info.power_grid_id = grid;
+                        info.power_grid_id = new_grid;
                         self.handle_assembler_relocations(relocations);
+                    },
+                    backend::AdditionResult::Failed { info } => todo!(),
+                }
+            },
+            EntityInfoKind::Inserter { middle_id, .. } => {
+                let info = &self.inserter_list[middle_id.0 as usize];
+
+                let current_grid_backend =
+                    self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
+
+                let sources = info
+                    .sources
+                    .iter()
+                    .flatten()
+                    .map(|conn| self.get_backend_conn(*conn))
+                    .collect_vec();
+
+                match backend.move_inserter(
+                    FullInserterIdentifier {
+                        grid: current_grid_backend,
+                        inserter_id: info.backend_id,
+                        inferred_items: &info.inferred_items,
+                        source: &sources,
+                        dest: self.get_backend_conn(info.dest),
+                        movetime: info.movetime,
+                    },
+                    self.power_grid_list[new_grid.0 as usize].backend_id,
+                ) {
+                    backend::AdditionResult::Added {
+                        new_id,
+                        relocations,
+                    } => {
+                        let info = &mut self.inserter_list[middle_id.0 as usize];
+                        info.backend_id = new_id;
+                        info.power_grid_id = new_grid;
+
+                        if !relocations.is_empty() {
+                            todo!("Handle relocations")
+                        }
                     },
                     backend::AdditionResult::Failed { info } => todo!(),
                 }

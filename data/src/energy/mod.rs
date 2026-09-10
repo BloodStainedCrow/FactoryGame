@@ -6,7 +6,7 @@ pub enum EnergySource {
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct Watt(u64);
+pub struct Watt(pub u64);
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct Joule(u64);
+pub struct Joule(pub u64);

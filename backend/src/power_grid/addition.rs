@@ -1,6 +1,9 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
-use crate::{AdditionResult, Backend, PowerGrid, power_grid::PowerGridBackendID};
+use crate::{
+    AdditionResult, Backend, PowerGrid,
+    power_grid::{PowerGridBackendID, inserter::store::InserterStore},
+};
 
 use middle_indices::PowerGridMiddleID;
 
@@ -19,7 +22,8 @@ impl Backend {
 
         self.power_grids.push(PowerGrid {
             middle_id,
-            assemblers: HashMap::new(),
+            assemblers: BTreeMap::new(),
+            inserters: InserterStore::default(),
         });
 
         AdditionResult::Added {

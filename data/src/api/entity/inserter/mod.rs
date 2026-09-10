@@ -22,7 +22,7 @@ pub struct InserterInfo {
 }
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-enum InserterMovementTime {
+pub enum InserterMovementTime {
     TicksPerTrip(InserterMovetime),
     RotationPerSecond { degrees: f32 },
 }
