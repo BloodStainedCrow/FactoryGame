@@ -7,7 +7,8 @@ use log::error;
 pub use v0::Blueprint;
 
 use crate::{
-    action::ActionKind,
+    GameState,
+    action::{ActionKind, ApplyActionError},
     blueprint::string::{BlueprintString, BlueprintStringCorrupt, RawBlueprintStringData},
 };
 
@@ -57,5 +58,13 @@ impl TryFrom<&BlueprintString> for CurrentBlueprint {
 impl CurrentBlueprint {
     pub fn get_actions(&self) -> impl Iterator<Item = &ActionKind> {
         self.actions.iter()
+    }
+
+    pub fn apply_to(&self, state: &mut GameState) -> Result<(), ApplyActionError> {
+        for action in self.get_actions() {
+            state.apply_action(action)?;
+        }
+
+        Ok(())
     }
 }

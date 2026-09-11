@@ -88,7 +88,7 @@ pub(crate) enum ForceKind {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum ApplyActionError {
+pub enum ApplyActionError {
     #[error("Could not place entity")]
     PlaceEntity(#[from] PlaceEntityError),
 }

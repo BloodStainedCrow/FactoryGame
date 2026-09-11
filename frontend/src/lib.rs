@@ -23,6 +23,17 @@ pub struct GameState {
     // etc
 }
 
+impl GameState {
+    #[must_use]
+    pub fn new(surfaces: Vec<Surface>) -> Self {
+        Self {
+            surfaces,
+            tech_state: (),
+            player_states: (),
+        }
+    }
+}
+
 // FIXME: This should not exist
 impl Default for GameState {
     fn default() -> Self {

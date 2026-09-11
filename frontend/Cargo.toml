@@ -17,6 +17,11 @@ world = { path = "../world" }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
+datatest-stable = "0.3"
+
+[[test]]
+name = "blueprint_tests"
+harness = false
 
 [[bench]]
 name = "benches"
