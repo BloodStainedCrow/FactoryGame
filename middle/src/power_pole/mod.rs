@@ -355,7 +355,7 @@ impl Middle {
                         inserter_id: info.backend_id,
                         inferred_items: &info.inferred_items,
                         source: &sources,
-                        dest: self.get_backend_conn(info.dest),
+                        dest: info.dest.map(|dest| self.get_backend_conn(dest)),
                         movetime: info.movetime,
                     },
                     self.power_grid_list[new_grid.0 as usize].backend_id,

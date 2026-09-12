@@ -1,8 +1,12 @@
 use std::path::Path;
 
 use data::spacial::{BoundingBox, Extent, Position};
-use frontend::GameState;
 use frontend::blueprint::{Blueprint, string::BlueprintString};
+use frontend::{ActionKind, GameState};
+use proptest::{
+    prelude::*,
+    test_runner::{Config, FileFailurePersistence, TestError, TestRunner},
+};
 use world::surface::{Surface, SurfaceCreationOptions};
 
 datatest_stable::harness! {
@@ -27,27 +31,61 @@ fn parse_blueprint(path: &Path, contents: String) -> datatest_stable::Result<Blu
         .map_err(|err| format!("{path:?}: could not parse blueprint: {err:?}").into())
 }
 
-fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
-    let blueprint = parse_blueprint(path, contents)?;
-    let mut state = fresh_game_state();
+fn check_orders(
+    path: &Path,
+    actions: &[ActionKind],
+    expect_accepted: bool,
+) -> datatest_stable::Result<()> {
+    let strategy = Just((0..actions.len()).collect::<Vec<usize>>()).prop_shuffle();
+    let mut runner = TestRunner::new(Config {
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(
+            "../proptest-regressions/blueprint_tests.txt",
+        ))),
+        ..Config::default()
+    });
 
-    if blueprint.apply_to(&mut state).is_err() {
-        return Err(format!("{path:?}: blueprint was rejected").into());
-    }
+    let result = runner.run(&strategy, |order| {
+        let mut state = fresh_game_state();
+        let reordered = Blueprint::from(
+            order
+                .iter()
+                .map(|&index| actions[index].clone())
+                .collect::<Vec<_>>(),
+        );
+
+        let accepted = reordered.apply_to(&mut state).is_ok();
+        if accepted != expect_accepted {
+            return Err(TestCaseError::fail(format!(
+                "actions in order {order:?} were {}",
+                if accepted { "accepted" } else { "rejected" }
+            )));
+        }
+
+        Ok(())
+    });
+
+    result.map_err(|error| -> Box<dyn std::error::Error> {
+        match error {
+            TestError::Fail(reason, order) => {
+                format!("{path:?}: order {order:?} failed: {reason}").into()
+            },
+            TestError::Abort(reason) => format!("{path:?}: {reason}").into(),
+        }
+    })?;
 
     Ok(())
 }
 
+fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
+    let blueprint = parse_blueprint(path, contents)?;
+    let actions: Vec<_> = blueprint.get_actions().cloned().collect();
+
+    check_orders(path, &actions, true)
+}
+
 fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
     let blueprint = parse_blueprint(path, contents)?;
-    let mut state = fresh_game_state();
+    let actions: Vec<_> = blueprint.get_actions().cloned().collect();
 
-    if blueprint.apply_to(&mut state).is_ok() {
-        return Err(format!(
-            "{path:?}: expected the blueprint to be rejected, but it was accepted"
-        )
-        .into());
-    }
-
-    Ok(())
+    check_orders(path, &actions, false)
 }

@@ -7,6 +7,8 @@ use crate::{
         power_pole::PowerPoleInfo,
     },
     entity::{GlobalTy, power_pole::PowerPoleData},
+    item::item_set::ItemSet,
+    recipe::RecipeInfo,
     spacial::{Extent, Offset},
 };
 
@@ -114,6 +116,11 @@ impl DataStore {
             entities,
             power_poles,
             inserters,
+
+            recipes: vec![RecipeInfo {
+                inputs: ItemSet::empty(),
+                outputs: ItemSet::empty(),
+            }],
         }
     }
 }

@@ -171,6 +171,10 @@ impl Middle {
 
         let destination = self.inserter_list[inserter.0 as usize].dest;
 
+        let Some(destination) = destination else {
+            return;
+        };
+
         let Ok(destination_container) = destination.try_into() else {
             return;
         };

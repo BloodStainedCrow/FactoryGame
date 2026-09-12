@@ -23,7 +23,7 @@ pub struct InserterAdditionInfo<'a> {
     pub middle_id: InserterMiddleID,
 
     pub source: Vec<BackendInserterConnection<'a>>,
-    pub dest: BackendInserterConnection<'a>,
+    pub dest: Option<BackendInserterConnection<'a>>,
     pub items: ItemSet,
     // TODO: Stats
     pub movetime: u16,
@@ -35,7 +35,7 @@ pub struct FullInserterIdentifier<'a> {
     pub inserter_id: InserterBackendID,
     pub inferred_items: &'a ItemSet,
     pub source: &'a [BackendInserterConnection<'a>],
-    pub dest: BackendInserterConnection<'a>,
+    pub dest: Option<BackendInserterConnection<'a>>,
     pub movetime: u16,
 }
 
@@ -142,7 +142,7 @@ impl InserterKind {
             u16,
             &ItemSet,
             &[BackendInserterConnection],
-            BackendInserterConnection,
+            Option<BackendInserterConnection>,
         ),
     ) -> Self {
         match inferred_items.is_pure() {
@@ -150,19 +150,21 @@ impl InserterKind {
                 BackendInserterConnection::get_list_entries(source, inferred_items)
                     .collect_vec()
                     .as_slice(),
-                dest.get_list_entry(inferred_items),
+                dest.map(|dest| dest.get_list_entry(inferred_items)),
             ) {
                 ([], _) => unreachable!(),
                 ([source_conn], dest_conn) => match (source_conn, dest_conn) {
+                    (_, None) => Self::EmptyInserter {},
+
                     (
                         InserterConnection::PureChest {
                             item: source_item,
                             index: source_index,
                         },
-                        InserterConnection::PureChest {
+                        Some(InserterConnection::PureChest {
                             item: dest_item,
                             index: dest_index,
-                        },
+                        }),
                     ) => {
                         assert_eq!(*source_item, item);
                         assert_eq!(dest_item, item);
@@ -176,15 +178,15 @@ impl InserterKind {
                     },
                     (
                         InserterConnection::PureChest { .. },
-                        InserterConnection::SushiChest { .. },
+                        Some(InserterConnection::SushiChest { .. }),
                     ) => todo!(),
                     (
                         InserterConnection::SushiChest { .. },
-                        InserterConnection::PureChest { .. },
+                        Some(InserterConnection::PureChest { .. }),
                     ) => todo!(),
                     (
                         InserterConnection::SushiChest { .. },
-                        InserterConnection::SushiChest { .. },
+                        Some(InserterConnection::SushiChest { .. }),
                     ) => todo!(),
                 },
 

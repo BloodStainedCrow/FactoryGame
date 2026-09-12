@@ -20,7 +20,7 @@ pub(crate) struct InserterInfo {
     pub(crate) power_grid_id: PowerGridMiddleID,
 
     pub(crate) sources: [Option<Conn>; MAX_CONN_COUNT],
-    pub(crate) dest: Conn,
+    pub(crate) dest: Option<Conn>,
     pub(crate) inferred_items: ItemSet,
     pub(crate) movetime: u16,
 
@@ -32,7 +32,7 @@ pub struct InserterAdditionInfo {
     pub power_grid_id: PowerGridMiddleID,
 
     pub sources: Vec<Conn>,
-    pub dest: Conn,
+    pub dest: Option<Conn>,
     pub item_filter: ItemSet,
     pub movetime: u16,
 }
@@ -49,9 +49,8 @@ impl Middle {
             .try_into()
             .expect("More than u32::MAX inserters");
 
-        assert_eq!(
-            info.sources.len(),
-            1,
+        assert!(
+            info.sources.len() <= 1,
             "Multi source inserter not supported yet"
         );
 
@@ -63,16 +62,20 @@ impl Middle {
                 a.union(&b);
                 a
             })
-            .expect("Need at least one source");
+            .unwrap_or(ItemSet::empty());
 
-        let dest_items = self.get_items_placeable_into(info.dest);
+        let dest_items = info.dest.map(|dest| self.get_items_placeable_into(dest));
 
         let mut items = source_items;
         items.intersection(&info.item_filter);
-        items.intersection(&dest_items);
+        if let Some(dest_items) = &dest_items {
+            items.intersection(dest_items);
+        }
 
-        for &source in &info.sources {
-            self.apply_effect_of_new_edge(source, info.dest, &items, backend);
+        if let Some(dest) = &info.dest {
+            for &source in &info.sources {
+                self.apply_effect_of_new_edge(source, *dest, &items, backend);
+            }
         }
 
         let backend_id =
@@ -84,7 +87,7 @@ impl Middle {
                     .iter()
                     .map(|conn| self.get_backend_conn(*conn))
                     .collect(),
-                dest: self.get_backend_conn(info.dest),
+                dest: info.dest.map(|dest| self.get_backend_conn(dest)),
                 movetime: info.movetime,
                 items: items.clone(),
             }) {

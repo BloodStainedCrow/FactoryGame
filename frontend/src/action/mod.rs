@@ -18,7 +18,7 @@ use crate::{GameState, SurfaceId};
 type TechnologyID = ();
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub(crate) enum ActionKind {
+pub enum ActionKind {
     PlaceBuilding {
         ghost: bool,
         force: ForceKind,
@@ -109,7 +109,7 @@ pub enum ApplyActionError {
 }
 
 impl GameState {
-    pub(crate) fn apply_action(&mut self, action: &ActionKind) -> Result<(), ApplyActionError> {
+    pub fn apply_action(&mut self, action: &ActionKind) -> Result<(), ApplyActionError> {
         match action {
             ActionKind::PlaceBuilding {
                 ghost,

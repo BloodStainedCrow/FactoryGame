@@ -11,6 +11,13 @@ impl VersionedBlueprint for Blueprint {
     }
 }
 
+// TODO: Remove at some point and replace with reordering get_actions
+impl From<Vec<ActionKind>> for Blueprint {
+    fn from(actions: Vec<ActionKind>) -> Self {
+        Self { actions }
+    }
+}
+
 impl<'a> TryFrom<&'a [u8]> for Blueprint {
     type Error = bincode::error::DecodeError;
 

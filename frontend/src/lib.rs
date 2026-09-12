@@ -10,6 +10,8 @@ mod action;
 pub mod blueprint;
 pub mod query;
 
+pub use action::{ActionKind, ApplyActionError};
+
 // TODO: This should prob not be default
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SurfaceId(u32);

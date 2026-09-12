@@ -29,7 +29,7 @@ impl TryFrom<GlobalTy> for AssemblerTy {
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
-pub struct Recipe(u16);
+pub struct Recipe(pub(crate) u16);
 
 impl<'a> TryFrom<&'a str> for Recipe {
     type Error = ();

@@ -267,7 +267,7 @@ impl Surface {
             &InserterAdditionInfo {
                 power_grid_id,
                 sources: source_conn,
-                dest: dest_conn.unwrap(),
+                dest: dest_conn,
                 item_filter: ItemSet::all(),
                 // TODO:
                 movetime: 100,

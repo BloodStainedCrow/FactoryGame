@@ -18,6 +18,7 @@ use crate::{
     },
     energy::{EnergySource, Watt},
     entity::{GlobalTy, PlacementRules, power_pole::PowerPoleData},
+    recipe::RecipeInfo,
     spacial::Extent,
 };
 
@@ -74,6 +75,8 @@ struct DataStore {
     entities: Vec<EntityInfo>,
     power_poles: Vec<PowerPoleData>,
     inserters: Vec<InserterInfo>,
+
+    recipes: Vec<RecipeInfo>,
 }
 
 /// The parsed data of the currently loaded mod set
