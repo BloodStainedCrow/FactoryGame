@@ -36,6 +36,8 @@ use data::{
     entity::{
         GlobalTy,
         assember::{AssemblerTy, Recipe},
+        beacon::BeaconTy,
+        belt::BeltTy,
         chest::ChestTy,
         extent,
         inserter::InserterTy,
@@ -278,6 +280,14 @@ fn building_kind_for(
 
     if let Ok(ty) = PowerPoleTy::try_from(global_ty) {
         return Ok(BuildingKind::PowerPole { ty });
+    }
+
+    if let Ok(ty) = BeltTy::try_from(global_ty) {
+        return Ok(BuildingKind::Belt { ty });
+    }
+
+    if let Ok(ty) = BeaconTy::try_from(global_ty) {
+        return Ok(BuildingKind::Beacon { ty });
     }
 
     Err(missing(format!(
