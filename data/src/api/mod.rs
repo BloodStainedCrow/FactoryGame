@@ -104,9 +104,16 @@ impl DataStore {
             })
             .collect();
 
+        let inserters: Vec<_> = mods
+            .iter()
+            .flat_map(|mod_| mod_.inserters.iter())
+            .cloned()
+            .collect();
+
         Self {
             entities,
             power_poles,
+            inserters,
         }
     }
 }

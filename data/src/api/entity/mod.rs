@@ -6,7 +6,7 @@ pub mod chest;
 pub mod inserter;
 pub mod power_pole;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct EntityInfo {
     // TODO: Add bounding box types
     pub size: Extent,

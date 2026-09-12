@@ -179,7 +179,7 @@ impl From<Direction> for Offset {
                 y_offs: -1,
             },
             Direction::East => Self {
-                x_offs: -1,
+                x_offs: 1,
                 y_offs: 0,
             },
             Direction::South => Self {
@@ -187,7 +187,7 @@ impl From<Direction> for Offset {
                 y_offs: 1,
             },
             Direction::West => Self {
-                x_offs: 1,
+                x_offs: -1,
                 y_offs: 0,
             },
         }
@@ -374,10 +374,44 @@ impl BoundingBox {
     }
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Offset {
     pub x_offs: i32,
     pub y_offs: i32,
+}
+
+impl std::ops::Add for Offset {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x_offs: self.x_offs + rhs.x_offs,
+            y_offs: self.y_offs + rhs.y_offs,
+        }
+    }
+}
+
+impl Offset {
+    /// Rotates the offset clockwise by `rotation`, i.e. a north-pointing
+    /// offset rotated by [`Rotation::East`] points east.
+    #[must_use]
+    pub const fn rotate(self, rotation: Rotation) -> Self {
+        match rotation {
+            Rotation::North => self,
+            Rotation::East => Self {
+                x_offs: -self.y_offs,
+                y_offs: self.x_offs,
+            },
+            Rotation::South => Self {
+                x_offs: -self.x_offs,
+                y_offs: -self.y_offs,
+            },
+            Rotation::West => Self {
+                x_offs: self.y_offs,
+                y_offs: -self.x_offs,
+            },
+        }
+    }
 }
 
 impl Add<Offset> for Position {
@@ -398,7 +432,7 @@ pub mod strategies {
         prop_compose, prop_oneof,
     };
 
-    use crate::spacial::{BoundingBox, Extent, Flipped, Position, Rotation};
+    use crate::spacial::{BoundingBox, Direction, Extent, Flipped, Offset, Position, Rotation};
 
     prop_compose! {
         pub fn random_extent()(sizes in [1u32..100, 1u32..100]) -> Extent {
@@ -430,6 +464,21 @@ pub mod strategies {
         }
     }
 
+    prop_compose! {
+        pub fn random_offset()(x_offs in -1_000..1_000, y_offs in -1_000..1_000) -> Offset {
+            Offset { x_offs, y_offs }
+        }
+    }
+
+    pub fn random_direction() -> impl Strategy<Value = Direction> {
+        prop_oneof![
+            Just(Direction::North),
+            Just(Direction::East),
+            Just(Direction::South),
+            Just(Direction::West),
+        ]
+    }
+
     pub fn random_position_in(bounding_box: BoundingBox) -> impl Strategy<Value = Position> {
         (bounding_box.top_left().x..=bounding_box.bottom_right().x).prop_flat_map(move |x| {
             (bounding_box.top_left().y..=bounding_box.bottom_right().y)
@@ -454,7 +503,10 @@ pub mod strategies {
 pub mod test {
     use proptest::{prop_assert, prop_assert_eq, proptest};
 
-    use crate::spacial::strategies::{random_extent, random_position, random_position_in};
+    use crate::spacial::strategies::{
+        random_direction, random_extent, random_offset, random_position, random_position_in,
+        random_rotation,
+    };
 
     use super::*;
 
@@ -472,6 +524,37 @@ pub mod test {
             let b_bb = BoundingBox::new(b, Extent::single_tile());
 
             prop_assert!((a == b && a_bb.overlaps(b_bb)) || (a != b && !a_bb.overlaps(b_bb)));
+        }
+
+        #[test]
+        fn offset_rotation_composes(o in random_offset()) {
+            // East is one clockwise quarter turn.
+            prop_assert_eq!(o.rotate(Rotation::East).rotate(Rotation::East), o.rotate(Rotation::South));
+            prop_assert_eq!(
+                o.rotate(Rotation::East)
+                    .rotate(Rotation::East)
+                    .rotate(Rotation::East),
+                o.rotate(Rotation::West),
+            );
+
+            // Quarter turns are invertible and four of them do nothing.
+            prop_assert_eq!(o.rotate(Rotation::East).rotate(Rotation::West), o);
+            prop_assert_eq!(o.rotate(Rotation::North), o);
+        }
+
+        #[test]
+        fn offset_rotation_matches_direction_rotation(
+            direction in random_direction(),
+            rotation in random_rotation(),
+        ) {
+            let rotated_direction = match rotation {
+                Rotation::North => direction,
+                Rotation::East => direction.rotate_right(),
+                Rotation::South => direction.rotate_right().rotate_right(),
+                Rotation::West => direction.rotate_right().rotate_right().rotate_right(),
+            };
+
+            prop_assert_eq!(Offset::from(direction).rotate(rotation), Offset::from(rotated_direction));
         }
     }
 }

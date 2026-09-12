@@ -38,7 +38,7 @@ struct ModIdentifier(String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EntityIdentifier(Arc<str>);
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 struct EntityName(String);
 
 impl EntityIdentifier {
@@ -73,6 +73,7 @@ struct EntityInfo {
 struct DataStore {
     entities: Vec<EntityInfo>,
     power_poles: Vec<PowerPoleData>,
+    inserters: Vec<InserterInfo>,
 }
 
 /// The parsed data of the currently loaded mod set

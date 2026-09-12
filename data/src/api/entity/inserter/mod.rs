@@ -4,7 +4,7 @@ use crate::{
 
 pub type InserterMovetime = u16;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct InserterInfo {
     pub entity_info: EntityInfo,
 

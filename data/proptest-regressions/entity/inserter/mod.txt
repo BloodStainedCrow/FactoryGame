@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 70028156f1f5cb686dd1a864ed62ab9178b6ce788c7cd21d7ffdb4e884a911cf # shrinks to (extent, x, y) = (Extent { width: 1, height: 2 }, 0, 0), rotation = North, flipped = Flipped { horizontally: false, vertically: true }
+cc d72c7c7ba731368f6525d780537d97e82ba1a2389f58d682be8cb5659ee9af24 # shrinks to (extent, x, y) = (Extent { width: 1, height: 2 }, 0, 1), rotation = East, flipped = Flipped { horizontally: false, vertically: false }
