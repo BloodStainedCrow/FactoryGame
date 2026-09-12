@@ -5,7 +5,7 @@ use data::{
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use middle_indices::{
-    AssemblerMiddleID, BeltMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
+    AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
     PowerPoleMiddleID,
 };
 
@@ -296,7 +296,7 @@ impl StoredEntity {
                 id: InserterMiddleID(self.index),
             },
             data::EntityPrototypeKind::Belt => EntityDescriptorKind::Belt {
-                id: BeltMiddleID(self.index),
+                id: BeltTileMiddleID(self.index),
             },
             data::EntityPrototypeKind::Pipe => EntityDescriptorKind::Pipe {
                 id: PipeMiddleID(self.index),

@@ -5,6 +5,7 @@ use data::{
     entity::{
         GlobalTy, allows_flipping, allows_rotation,
         assember::{AssemblerTy, default_recipe},
+        belt::BeltTy,
         bounding_box,
         chest::{ChestTy, num_slots},
         inserter::{InserterTy, get_input_position, get_output_position},
@@ -18,6 +19,7 @@ use itertools::Itertools;
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
     assembler::AssemblerAdditionInfo,
+    belt::BeltTileAdditionInfo,
     chest::ChestAdditionInfo,
     inserter::InserterAdditionInfo,
     power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
@@ -282,6 +284,45 @@ impl Surface {
             ty: ty.into(),
             kind: EntityDescriptorKind::Inserter {
                 id: middle_chest_id,
+            },
+        });
+
+        Ok(())
+    }
+
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_belt(
+        &mut self,
+        ty: BeltTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add belt with ty {ty:?} at {top_left:?}");
+        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+
+        // Placement is allowed. Do the placing
+
+        let middle_belt_tile_id = self.middle.add_belt_tile(
+            BeltTileAdditionInfo {
+                length: 4,
+                // TODO:
+                front_merge: None,
+                back_merge: None,
+                left_sideload_source: None,
+                right_sideload_source: None,
+            },
+            &mut self.backend,
+        );
+
+        self.world.add_entity(EntityDescriptor {
+            position: top_left,
+            rotation,
+            flipped,
+            ty: ty.into(),
+            kind: EntityDescriptorKind::Belt {
+                id: middle_belt_tile_id,
             },
         });
 

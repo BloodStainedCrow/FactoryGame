@@ -144,13 +144,15 @@ impl GameState {
                         surface.add_inserter(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::Belt { ty } => {
-                        // TODO:
+                        surface.add_belt(ty, top_left, rotation, flipped)?
                     },
                     &BuildingKind::UndergroundBelt { ty } => {
                         // TODO:
+                        todo!()
                     },
                     &BuildingKind::Beacon { ty } => {
                         // TODO:
+                        todo!()
                     },
                 }
             },
