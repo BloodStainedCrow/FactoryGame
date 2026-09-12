@@ -101,6 +101,8 @@
         bacon
         mangohud
 
+        cargo-llvm-cov
+
         (vscode-with-extensions.override {
           vscode = pkgs-codium.vscodium;
           vscodeExtensions = with pkgs.vscode-extensions; [
