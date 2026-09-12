@@ -1,13 +1,13 @@
-use backend::Backend;
+use backend::{Backend, transport_lines::TransportLineBackendID};
 use data::item::item_set::ItemSet;
 use middle_indices::TransportLineMiddleID;
 
 use crate::Middle;
 
 #[derive(Debug, Clone)]
-pub struct TransportLineInfo {
-    backend_id: !,
-    inferred_items: ItemSet,
+pub(crate) struct TransportLineInfo {
+    pub backend_id: TransportLineBackendID,
+    pub inferred_items: ItemSet,
 }
 
 #[derive(Debug)]
@@ -31,8 +31,14 @@ impl Middle {
 
         let next_index = self.belt_list.next_push_index();
 
+        let backend_id =
+            backend.add_transport_line(backend::transport_lines::TransportLineAdditionInfo {
+                length,
+                items: ItemSet::empty(),
+            });
+
         let index = self.belt_list.push(TransportLineInfo {
-            backend_id: todo!(),
+            backend_id,
             inferred_items: ItemSet::empty(),
         });
 

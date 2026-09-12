@@ -97,7 +97,10 @@ impl Surface {
                         ty: desc.ty.try_into().expect("Inserter with non InserterTy"),
                         middle_id: id,
                     },
-                    EntityDescriptorKind::Belt { id } => todo!(),
+                    EntityDescriptorKind::Belt { id } => EntityInfoKind::Belt {
+                        ty: desc.ty.try_into().expect("Belt with non BeltTy"),
+                        middle_id: id,
+                    },
                     EntityDescriptorKind::Pipe { id } => todo!(),
                     EntityDescriptorKind::Chest { id } => EntityInfoKind::Chest {
                         ty: desc.ty.try_into().expect("Chest with non ChestTy"),

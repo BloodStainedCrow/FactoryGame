@@ -11,6 +11,7 @@ itertools = "0.14.0"
 stable-vec = "0.4.3"
 static_assertions = "1.1.0"
 middle_indices = { path = "../middle_indices" }
+serde = { version = "1.0.229", features = ["derive"] }
 
 [dev-dependencies]
 proptest = "1.11.0"

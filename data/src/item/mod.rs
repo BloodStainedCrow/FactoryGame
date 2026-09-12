@@ -4,7 +4,9 @@ pub type ItemCountType = u16;
 
 pub mod item_set;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Item(u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

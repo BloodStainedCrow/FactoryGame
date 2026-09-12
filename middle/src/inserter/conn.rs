@@ -4,40 +4,48 @@ use backend::{
     Backend,
     chests::FullChestIdentifier,
     power_grid::{assembler::FullAssemblerIdentifier, inserter::conn::BackendInserterConnection},
+    transport_lines::FullTransportLineIdentifier,
 };
 use data::{
     item::item_set::ItemSet,
     recipe::{get_items_consumed_by_recipe, get_items_produced_by_recipe},
 };
-use middle_indices::{AssemblerMiddleID, ChestMiddleID, InserterMiddleID};
+use middle_indices::{
+    AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, TransportLineMiddleID,
+};
 
-use crate::Middle;
+use crate::{Middle, belt::TransportLineInfo};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Conn {
     Assembler { id: AssemblerMiddleID },
     Chest { id: ChestMiddleID },
+    BeltTile { id: BeltTileMiddleID },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Container {
     Chest { id: ChestMiddleID },
+    TransportLine { id: TransportLineMiddleID },
+}
+
+impl Conn {
+    fn get_container(self, middle: &Middle) -> Option<Container> {
+        match self {
+            Self::Assembler { id } => None,
+            Self::Chest { id } => Some(Container::Chest { id }),
+            Self::BeltTile { id } => {
+                let id = middle.belt_tile_list[id.0 as usize].transport_line;
+
+                Some(Container::TransportLine { id })
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Edge {
     Inserter { id: InserterMiddleID },
-}
-
-impl TryFrom<Conn> for Container {
-    type Error = ();
-
-    fn try_from(value: Conn) -> Result<Self, Self::Error> {
-        match value {
-            Conn::Assembler { id } => Err(()),
-            Conn::Chest { id } => Ok(Container::Chest { id }),
-        }
-    }
 }
 
 impl Middle {
@@ -57,6 +65,19 @@ impl Middle {
                     id: self.chest_list[id.0 as usize].backend_id,
                 },
             },
+            Conn::BeltTile { id } => {
+                let TransportLineInfo {
+                    backend_id,
+                    inferred_items,
+                } = &self.belt_list[self.belt_tile_list[id.0 as usize].transport_line.0 as usize];
+
+                BackendInserterConnection::TransportLine {
+                    ident: FullTransportLineIdentifier {
+                        id: *backend_id,
+                        items: inferred_items,
+                    },
+                }
+            },
         }
     }
 
@@ -72,6 +93,11 @@ impl Middle {
             Conn::Chest { id } => self
                 .get_item_in_container(Container::Chest { id: id })
                 .clone(),
+            Conn::BeltTile { id } => self
+                .get_item_in_container(Container::TransportLine {
+                    id: self.belt_tile_list[id.0 as usize].transport_line,
+                })
+                .clone(),
         }
     }
 
@@ -85,12 +111,14 @@ impl Middle {
                 get_items_consumed_by_recipe(recipe)
             },
             Conn::Chest { id } => ItemSet::all(),
+            Conn::BeltTile { id } => ItemSet::all(),
         }
     }
 
     pub fn get_item_in_container(&self, container: Container) -> &ItemSet {
         match container {
             Container::Chest { id } => &self.chest_list[id.0 as usize].inferred_items,
+            Container::TransportLine { id } => &self.belt_list[id.0 as usize].inferred_items,
         }
     }
 
@@ -126,7 +154,7 @@ impl Middle {
         container_changes: &mut HashMap<Container, ItemSet>,
         edge_changes: &mut HashMap<Edge, ItemSet>,
     ) {
-        let Ok(destination_container) = dest.try_into() else {
+        let Some(destination_container) = dest.get_container(self) else {
             return;
         };
 
@@ -154,6 +182,7 @@ impl Middle {
     ) {
         let inserters = match container {
             Container::Chest { id } => self.chest_list[id.0 as usize].connected_inserters.iter(),
+            Container::TransportLine { id } => todo!(),
         };
 
         for inserter in inserters {
@@ -175,7 +204,7 @@ impl Middle {
             return;
         };
 
-        let Ok(destination_container) = destination.try_into() else {
+        let Some(destination_container) = destination.get_container(self) else {
             return;
         };
 

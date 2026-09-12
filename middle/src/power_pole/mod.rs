@@ -377,6 +377,7 @@ impl Middle {
             },
             EntityInfoKind::PowerPole { .. } => unreachable!(),
             EntityInfoKind::Chest { .. } => unreachable!(),
+            EntityInfoKind::Belt { .. } => unreachable!(),
         }
     }
 }

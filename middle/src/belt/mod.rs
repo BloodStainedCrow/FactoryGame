@@ -46,7 +46,7 @@ pub struct BeltTileAdditionInfo {
 
 #[derive(Debug, Clone)]
 pub(crate) struct BeltTileInfo {
-    transport_line: TransportLineMiddleID,
+    pub transport_line: TransportLineMiddleID,
 }
 
 impl Middle {

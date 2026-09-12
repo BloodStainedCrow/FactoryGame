@@ -56,10 +56,10 @@ impl EntityDescriptor {
     fn get_source_conn(&self) -> Vec<Conn> {
         match self.kind {
             EntityDescriptorKind::Assembler { id } => vec![Conn::Assembler { id }],
-            EntityDescriptorKind::Inserter { id } => vec![],
-            EntityDescriptorKind::Belt { id } => todo!(),
-            EntityDescriptorKind::Pipe { id } => vec![],
-            EntityDescriptorKind::PowerPole { id } => vec![],
+            EntityDescriptorKind::Inserter { .. } => vec![],
+            EntityDescriptorKind::Belt { id } => vec![Conn::BeltTile { id }],
+            EntityDescriptorKind::Pipe { .. } => vec![],
+            EntityDescriptorKind::PowerPole { .. } => vec![],
             EntityDescriptorKind::Chest { id } => vec![Conn::Chest { id }],
             EntityDescriptorKind::SolarPanel {} => vec![],
         }
@@ -68,10 +68,10 @@ impl EntityDescriptor {
     fn get_dest_conn(&self) -> Option<Conn> {
         match self.kind {
             EntityDescriptorKind::Assembler { id } => Some(Conn::Assembler { id }),
-            EntityDescriptorKind::Inserter { id } => None,
-            EntityDescriptorKind::Belt { id } => todo!(),
-            EntityDescriptorKind::Pipe { id } => None,
-            EntityDescriptorKind::PowerPole { id } => None,
+            EntityDescriptorKind::Inserter { .. } => None,
+            EntityDescriptorKind::Belt { id } => Some(Conn::BeltTile { id }),
+            EntityDescriptorKind::Pipe { .. } => None,
+            EntityDescriptorKind::PowerPole { .. } => None,
             EntityDescriptorKind::Chest { id } => Some(Conn::Chest { id }),
             EntityDescriptorKind::SolarPanel {} => None,
         }
