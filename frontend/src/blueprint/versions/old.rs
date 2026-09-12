@@ -5,7 +5,11 @@ use base64::engine::general_purpose::STANDARD;
 use data::{
     EntityIdentifier,
     entity::{
-        GlobalTy, assember::AssemblerTy, belt::BeltTy, chest::ChestTy, inserter::InserterTy,
+        GlobalTy,
+        assember::{AssemblerTy, Recipe},
+        belt::BeltTy,
+        chest::ChestTy,
+        inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
     spacial::{Direction, Flipped, Position, Rotation},
@@ -440,7 +444,9 @@ impl Into<super::Blueprint> for Blueprint {
                                 flipped,
                                 kind: BuildingKind::Assembler {
                                     ty,
-                                    recipe: Some(recipe.try_into().expect("Failed to load recipe")),
+                                    recipe: Some(
+                                        Recipe::try_from(&*recipe).expect("Failed to load recipe"),
+                                    ),
                                     modules,
                                 },
                             },

@@ -46,10 +46,14 @@ impl TryFrom<BlueprintString> for RawBlueprintStringData {
     type Error = BlueprintStringCorrupt;
 
     fn try_from(value: BlueprintString) -> Result<Self, Self::Error> {
-        BASE64_STANDARD
-            .decode(value.0)
-            .map(|v| Self(v))
-            .map_err(|e| BlueprintStringCorrupt::NotBase64(e))
+        if let Some(rest) = value.0.strip_prefix("RAW BLUEPRINT: V") {
+            Ok(Self(rest.as_bytes().to_vec()))
+        } else {
+            BASE64_STANDARD
+                .decode(value.0)
+                .map(|v| Self(v))
+                .map_err(|e| BlueprintStringCorrupt::NotBase64(e))
+        }
     }
 }
 

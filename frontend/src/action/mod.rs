@@ -1,5 +1,6 @@
 use data::{
     entity::{
+        GlobalTy,
         assember::{AssemblerTy, Recipe},
         beacon::BeaconTy,
         belt::BeltTy,
@@ -51,6 +52,20 @@ pub(crate) struct BuildingInfo {
     pub(crate) flipped: Flipped,
 
     pub(crate) kind: BuildingKind,
+}
+
+impl BuildingKind {
+    pub(crate) fn get_global_ty(&self) -> GlobalTy {
+        match self {
+            Self::Assembler { ty, .. } => GlobalTy::from(*ty),
+            Self::PowerPole { ty } => GlobalTy::from(*ty),
+            Self::Chest { ty } => GlobalTy::from(*ty),
+            Self::Inserter { ty } => GlobalTy::from(*ty),
+            Self::Belt { ty } => GlobalTy::from(*ty),
+            Self::UndergroundBelt { ty } => GlobalTy::from(*ty),
+            Self::Beacon { ty } => GlobalTy::from(*ty),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

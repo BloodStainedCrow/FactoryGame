@@ -6,8 +6,8 @@ use frontend::blueprint::{Blueprint, string::BlueprintString};
 use world::surface::{Surface, SurfaceCreationOptions};
 
 datatest_stable::harness! {
-    { test = accepted_blueprint, root = "../test_blueprints/fuzzing/accepted", pattern = r"^.*\.bp$" },
-    { test = rejected_blueprint, root = "../test_blueprints/fuzzing/rejected", pattern = r"^.*\.bp$" },
+    { test = should_be_accepted, root = "../test_blueprints/fuzzing/accepted", pattern = r"^.*\.bp$" },
+    { test = should_be_rejected, root = "../test_blueprints/fuzzing/rejected", pattern = r"^.*\.bp$" },
 }
 
 fn fresh_game_state() -> GameState {
@@ -27,7 +27,7 @@ fn parse_blueprint(path: &Path, contents: String) -> datatest_stable::Result<Blu
         .map_err(|err| format!("{path:?}: could not parse blueprint: {err:?}").into())
 }
 
-fn accepted_blueprint(path: &Path, contents: String) -> datatest_stable::Result<()> {
+fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
     let blueprint = parse_blueprint(path, contents)?;
     let mut state = fresh_game_state();
 
@@ -38,7 +38,7 @@ fn accepted_blueprint(path: &Path, contents: String) -> datatest_stable::Result<
     Ok(())
 }
 
-fn rejected_blueprint(path: &Path, contents: String) -> datatest_stable::Result<()> {
+fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
     let blueprint = parse_blueprint(path, contents)?;
     let mut state = fresh_game_state();
 

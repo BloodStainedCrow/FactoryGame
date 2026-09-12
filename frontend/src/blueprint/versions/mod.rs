@@ -1,3 +1,4 @@
+mod graphical;
 mod old;
 mod v0;
 
@@ -38,6 +39,13 @@ impl TryFrom<&BlueprintString> for CurrentBlueprint {
                 let old: old::Blueprint = old::Blueprint::try_from(versioned.data)?;
 
                 old.into()
+            },
+
+            graphical::VERSION => {
+                let graphical: graphical::GraphicalBlueprint =
+                    graphical::GraphicalBlueprint::try_from(versioned.data)?;
+
+                graphical.into()
             },
 
             x => {

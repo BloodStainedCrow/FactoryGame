@@ -31,10 +31,10 @@ impl TryFrom<GlobalTy> for AssemblerTy {
 )]
 pub struct Recipe(u16);
 
-impl TryFrom<String> for Recipe {
+impl<'a> TryFrom<&'a str> for Recipe {
     type Error = ();
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
         // FIXME:
         Ok(Self(0))
     }
