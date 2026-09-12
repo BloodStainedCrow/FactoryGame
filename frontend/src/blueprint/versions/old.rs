@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, io::BufReader, num::NonZero, u32};
 use base64::engine::general_purpose::STANDARD;
 use data::{
     EntityIdentifier,
+    api::RecipeIdentifier,
     entity::{
         GlobalTy,
         assember::{AssemblerTy, Recipe},
@@ -12,7 +13,6 @@ use data::{
         inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
-    recipe::RecipeIdentifier,
     spacial::{Direction, Flipped, Position, Rotation},
 };
 use log::error;

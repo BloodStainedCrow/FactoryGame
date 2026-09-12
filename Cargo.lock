@@ -1194,6 +1194,7 @@ name = "data"
 version = "0.1.0"
 dependencies = [
  "enum-map 2.7.3",
+ "itertools 0.15.0",
  "proptest",
  "serde",
 ]

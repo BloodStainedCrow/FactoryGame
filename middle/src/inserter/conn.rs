@@ -142,7 +142,11 @@ impl Middle {
 
         if container_changes.is_empty() && edge_changes.is_empty() {
         } else {
-            todo!("Apply changes to self and backend")
+            todo!(
+                "Apply changes to self and backend: {:?} and {:?}",
+                container_changes,
+                edge_changes
+            )
         }
     }
 

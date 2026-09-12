@@ -2,17 +2,25 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     DataStore, EntityIdentifier, EntityPrototypeKind, ModIdentifier,
-    api::entity::{
-        assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, inserter::InserterInfo,
-        power_pole::PowerPoleInfo,
+    api::{
+        entity::{
+            assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, inserter::InserterInfo,
+            power_pole::PowerPoleInfo,
+        },
+        item::ItemInfo,
+        recipe::RecipeInfo,
     },
     entity::{GlobalTy, assember::Recipe, power_pole::PowerPoleData},
-    item::item_set::ItemSet,
-    recipe::{RecipeIdentifier, RecipeInfo},
+    item::Item,
     spacial::{Extent, Offset},
 };
 
 pub(crate) mod entity;
+pub(crate) mod item;
+pub(crate) mod recipe;
+
+pub use item::ItemIdentifier;
+pub use recipe::RecipeIdentifier;
 
 pub(crate) struct ModData {
     pub mod_name: ModIdentifier,
@@ -22,6 +30,9 @@ pub(crate) struct ModData {
     pub power_poles: Vec<PowerPoleInfo>,
     pub chests: Vec<ChestInfo>,
     pub belts: Vec<BeltInfo>,
+
+    pub items: Vec<ItemInfo>,
+    pub recipes: Vec<RecipeInfo>,
 }
 
 impl DataStore {
@@ -36,6 +47,9 @@ impl DataStore {
                         power_poles,
                         chests,
                         belts,
+
+                        items: _,
+                        recipes: _,
                     } = mod_;
 
                     power_poles
@@ -75,6 +89,46 @@ impl DataStore {
                 })
                 .collect();
 
+        let items: Vec<_> = mods
+            .iter()
+            .flat_map(|mod_| {
+                let ModData { items, .. } = mod_;
+
+                items.iter().map(|item| crate::item::ItemInfo {
+                    identifier: ItemIdentifier::new(&mod_.mod_name, &item.name),
+                    stack_size: item.stack_size,
+                })
+            })
+            .collect();
+
+        let item_to_id: HashMap<ItemIdentifier, Item> = items
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| {
+                (
+                    e.identifier.clone(),
+                    Item(u16::try_from(idx).expect("More than u16::MAX items")),
+                )
+            })
+            .collect();
+
+        let recipes: Vec<_> = mods
+            .iter()
+            .flat_map(|mod_| {
+                let ModData { recipes, .. } = mod_;
+
+                recipes.iter().map(|recipe| crate::recipe::RecipeInfo {
+                    recipe_identifier: RecipeIdentifier::new(&mod_.mod_name, &recipe.name),
+                    inputs: recipe
+                        .ingredients
+                        .keys()
+                        .map(|item| item_to_id[item])
+                        .collect(),
+                    outputs: recipe.results.keys().map(|item| item_to_id[item]).collect(),
+                })
+            })
+            .collect();
+
         assert!(u16::try_from(entities.len()).is_ok());
 
         let full_name_to_global_id: HashMap<EntityIdentifier, GlobalTy> = entities
@@ -88,7 +142,16 @@ impl DataStore {
             })
             .collect();
 
-        let recipe_to_id: HashMap<RecipeIdentifier, Recipe> = Default::default();
+        let recipe_to_id: HashMap<RecipeIdentifier, Recipe> = recipes
+            .iter()
+            .enumerate()
+            .map(|(idx, e)| {
+                (
+                    e.recipe_identifier.clone(),
+                    Recipe(u16::try_from(idx).expect("More than u16::MAX recipes")),
+                )
+            })
+            .collect();
 
         let power_poles = mods
             .iter()
@@ -138,12 +201,8 @@ impl DataStore {
             inserters,
             assemblers,
 
-            recipes: vec![RecipeInfo {
-                recipe_identifier: RecipeIdentifier::new_raw("No Recipe".into()),
-
-                inputs: ItemSet::empty(),
-                outputs: ItemSet::empty(),
-            }],
+            items,
+            recipes,
         }
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{api::entity::EntityInfo, recipe::RecipeIdentifier};
+use crate::api::{entity::EntityInfo, recipe::RecipeIdentifier};
 
 #[derive(Debug, serde::Deserialize)]
 pub struct AssemblerInfo {

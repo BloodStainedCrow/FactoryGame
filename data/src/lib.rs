@@ -2,6 +2,7 @@
 
 use std::{
     cmp::max,
+    collections::HashMap,
     sync::{Arc, LazyLock},
 };
 
@@ -14,9 +15,12 @@ use crate::{
             inserter::{InserterInfo, InserterMovementTime},
             power_pole::PowerPoleInfo,
         },
+        item::{ItemIdentifier, ItemName},
+        recipe::RecipeName,
     },
     energy::{EnergySource, Watt},
     entity::{GlobalTy, PlacementRules, assember::AssemblerInfo, power_pole::PowerPoleData},
+    item::ItemInfo,
     recipe::RecipeInfo,
     spacial::Extent,
 };
@@ -32,7 +36,7 @@ pub mod item;
 pub mod recipe;
 pub mod spacial;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize)]
 struct ModIdentifier(String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -76,13 +80,15 @@ struct DataStore {
     inserters: Vec<InserterInfo>,
     assemblers: Vec<AssemblerInfo>,
 
+    items: Vec<ItemInfo>,
     recipes: Vec<RecipeInfo>,
 }
 
 /// The parsed data of the currently loaded mod set
 static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
+    let mod_ident = ModIdentifier("factory_game".to_string());
     DataStore::from_mods(&[ModData {
-        mod_name: ModIdentifier("factory_game".to_string()),
+        mod_name: mod_ident.clone(),
         inserters: vec![InserterInfo {
             entity_info: api::entity::EntityInfo {
                 size: Extent::single_tile(),
@@ -290,6 +296,28 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                 display_name: "Fast Transport Belt".to_string(),
                 placement_rules: PlacementRules::no_restriction(),
             },
+        }],
+
+        items: vec![
+            api::item::ItemInfo {
+                name: ItemName("iron_ore".into()),
+                stack_size: 50,
+            },
+            api::item::ItemInfo {
+                name: ItemName("iron_plate".into()),
+                stack_size: 100,
+            },
+        ],
+        recipes: vec![api::recipe::RecipeInfo {
+            name: RecipeName("smelt_iron".into()),
+            ingredients: HashMap::from_iter([(
+                ItemIdentifier::new(&mod_ident, &ItemName("iron_ore".into())),
+                1,
+            )]),
+            results: HashMap::from_iter([(
+                ItemIdentifier::new(&mod_ident, &ItemName("iron_plate".into())),
+                1,
+            )]),
         }],
     }])
 });

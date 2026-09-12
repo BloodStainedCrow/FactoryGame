@@ -1,5 +1,7 @@
 use std::num::NonZero;
 
+use crate::api::item::ItemIdentifier;
+
 pub type ItemCountType = u16;
 
 pub mod item_set;
@@ -7,7 +9,7 @@ pub mod item_set;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
-pub struct Item(u16);
+pub struct Item(pub(crate) u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ItemStack {
@@ -19,6 +21,13 @@ pub struct ItemStack {
 pub const fn max_stack_size(item: Item) -> NonZero<ItemCountType> {
     // TODO
     NonZero::new(2).expect("Hardcoded")
+}
+
+#[derive(Debug)]
+pub(crate) struct ItemInfo {
+    pub identifier: ItemIdentifier,
+
+    pub stack_size: ItemCountType,
 }
 
 #[cfg(feature = "test")]

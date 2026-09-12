@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::{DATA_STORE, EntityPrototypeKind, entity::GlobalTy, recipe::RecipeIdentifier};
+use crate::{DATA_STORE, EntityPrototypeKind, api::recipe::RecipeIdentifier, entity::GlobalTy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssemblerTy(u16);

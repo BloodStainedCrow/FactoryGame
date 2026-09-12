@@ -33,6 +33,7 @@ use serde::Deserialize;
 
 use data::{
     EntityIdentifier,
+    api::RecipeIdentifier,
     entity::{
         GlobalTy,
         assember::{AssemblerTy, Recipe},
@@ -43,7 +44,6 @@ use data::{
         inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
-    recipe::RecipeIdentifier,
     spacial::{Extent, Flipped, Position, Rotation},
 };
 
