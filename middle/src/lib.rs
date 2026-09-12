@@ -7,7 +7,7 @@ use stable_vec::StableVec;
 
 use crate::{
     assembler::MiddleAssemblerInfo,
-    belt::{BeltTileInfo, TransportLineInfo},
+    belt::{BeltTileInfo, SplitterInfo, TransportLineInfo},
     chest::ChestInfo,
     inserter::InserterInfo,
     pipe::MiddlePipeInfo,
@@ -33,6 +33,7 @@ pub struct Middle {
     chest_list: StableVec<ChestInfo>,
     belt_tile_list: StableVec<BeltTileInfo>,
     belt_list: StableVec<TransportLineInfo>,
+    splitter_list: StableVec<SplitterInfo>,
 }
 
 pub const UNATTACHED_POWER_GRID_ID: PowerGridMiddleID = PowerGridMiddleID(0);
@@ -62,6 +63,7 @@ impl Middle {
             chest_list: vec![].into(),
             belt_tile_list: vec![].into(),
             belt_list: vec![].into(),
+            splitter_list: vec![].into(),
         }
     }
 }

@@ -1,24 +1,47 @@
 use backend::Backend;
-use middle_indices::{BeltTileMiddleID, TransportLineMiddleID};
+use itertools::Either;
+use middle_indices::{BeltTileMiddleID, SplitterMiddleID, TransportLineMiddleID};
 
 use crate::{
     Middle,
-    belt::transport_lines::{TransportLineAdditionInfo, TransportLineEnd},
+    belt::{
+        splitter::{SplitterEnd, SplitterSide},
+        transport_lines::{TransportLineAdditionInfo, TransportLineEnd},
+    },
 };
 
+mod splitter;
 mod transport_lines;
 
+pub(crate) use splitter::SplitterInfo;
 pub(crate) use transport_lines::TransportLineInfo;
+
+pub type BeltConnection = Either<BeltTileMiddleID, (SplitterMiddleID, SplitterSide)>;
+
+pub trait GetID: Copy {
+    fn get_id(self, middle: &Middle, end: SplitterEnd) -> BeltTileMiddleID;
+}
+
+impl GetID for BeltConnection {
+    fn get_id(self, middle: &Middle, end: SplitterEnd) -> BeltTileMiddleID {
+        match self {
+            Self::Left(belt) => belt,
+            Self::Right((splitter, side)) => {
+                middle.splitter_list[splitter.0 as usize].belts[end][side]
+            },
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct BeltTileAdditionInfo {
     pub length: u32,
 
-    pub front_merge: Option<BeltTileMiddleID>,
-    pub back_merge: Option<BeltTileMiddleID>,
+    pub front_merge: Option<BeltConnection>,
+    pub back_merge: Option<BeltConnection>,
 
-    pub left_sideload_source: Option<BeltTileMiddleID>,
-    pub right_sideload_source: Option<BeltTileMiddleID>,
+    pub left_sideload_source: Option<BeltConnection>,
+    pub right_sideload_source: Option<BeltConnection>,
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +63,12 @@ impl Middle {
             left_sideload_source,
             right_sideload_source,
         } = info;
+
+        let front_merge = front_merge.map(|v| v.get_id(self, SplitterEnd::Back));
+        let back_merge = back_merge.map(|v| v.get_id(self, SplitterEnd::Front));
+        let left_sideload_source = left_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
+        let right_sideload_source =
+            right_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
 
         let next_index = self.belt_tile_list.next_push_index();
 
