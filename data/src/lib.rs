@@ -9,7 +9,6 @@ use crate::{
     api::{
         ModData,
         entity::{
-            assembler::AssemblerInfo,
             belt::BeltInfo,
             chest::ChestInfo,
             inserter::{InserterInfo, InserterMovementTime},
@@ -17,7 +16,7 @@ use crate::{
         },
     },
     energy::{EnergySource, Watt},
-    entity::{GlobalTy, PlacementRules, power_pole::PowerPoleData},
+    entity::{GlobalTy, PlacementRules, assember::AssemblerInfo, power_pole::PowerPoleData},
     recipe::RecipeInfo,
     spacial::Extent,
 };
@@ -75,6 +74,7 @@ struct DataStore {
     entities: Vec<EntityInfo>,
     power_poles: Vec<PowerPoleData>,
     inserters: Vec<InserterInfo>,
+    assemblers: Vec<AssemblerInfo>,
 
     recipes: Vec<RecipeInfo>,
 }
@@ -165,7 +165,7 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
             },
         ],
         assemblers: vec![
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 3,
@@ -177,8 +177,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Assembler 1".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 3,
@@ -190,8 +192,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Assembler 2".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 3,
@@ -203,8 +207,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Assembler 3".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 3,
@@ -216,8 +222,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Chemical Plant".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 5,
@@ -229,8 +237,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Refinery".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 3,
@@ -242,8 +252,10 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Electric Furnace".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
-            AssemblerInfo {
+            api::entity::assembler::AssemblerInfo {
                 entity_info: api::entity::EntityInfo {
                     size: Extent {
                         width: 7,
@@ -255,6 +267,8 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                     display_name: "Rocket Silo".to_string(),
                     placement_rules: PlacementRules::no_restriction(),
                 },
+
+                default_recipe: None,
             },
         ],
         chests: vec![ChestInfo {

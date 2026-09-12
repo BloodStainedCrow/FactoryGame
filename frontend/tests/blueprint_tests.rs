@@ -10,8 +10,10 @@ use proptest::{
 use world::surface::{Surface, SurfaceCreationOptions};
 
 datatest_stable::harness! {
+    { test = should_not_be_applicable_to_modset, root = "../test_blueprints/fuzzing/not_apply", pattern = r"^.*\.bp$" },
     { test = should_be_accepted, root = "../test_blueprints/fuzzing/accepted", pattern = r"^.*\.bp$" },
-    { test = should_be_rejected, root = "../test_blueprints/fuzzing/rejected", pattern = r"^.*\.bp$" },
+    // TODO: Currently no rejected blueprints
+    // { test = should_be_rejected, root = "../test_blueprints/fuzzing/rejected", pattern = r"^.*\.bp$" },
 }
 
 fn fresh_game_state() -> GameState {
@@ -74,6 +76,18 @@ fn check_orders(
     })?;
 
     Ok(())
+}
+
+fn should_not_be_applicable_to_modset(
+    path: &Path,
+    contents: String,
+) -> datatest_stable::Result<()> {
+    let res = parse_blueprint(path, contents);
+
+    match res {
+        Ok(_) => Err(format!("Parsed but should be rejected by modset").into()),
+        Err(e) => Ok(()),
+    }
 }
 
 fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {

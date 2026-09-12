@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     DataStore, EntityIdentifier, EntityPrototypeKind, ModIdentifier,
@@ -6,9 +6,9 @@ use crate::{
         assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, inserter::InserterInfo,
         power_pole::PowerPoleInfo,
     },
-    entity::{GlobalTy, power_pole::PowerPoleData},
+    entity::{GlobalTy, assember::Recipe, power_pole::PowerPoleData},
     item::item_set::ItemSet,
-    recipe::RecipeInfo,
+    recipe::{RecipeIdentifier, RecipeInfo},
     spacial::{Extent, Offset},
 };
 
@@ -88,6 +88,8 @@ impl DataStore {
             })
             .collect();
 
+        let recipe_to_id: HashMap<RecipeIdentifier, Recipe> = Default::default();
+
         let power_poles = mods
             .iter()
             .flat_map(|mod_| {
@@ -112,12 +114,33 @@ impl DataStore {
             .cloned()
             .collect();
 
+        let assemblers: Vec<_> = mods
+            .iter()
+            .flat_map(|mod_| mod_.assemblers.iter())
+            .map(|data| crate::AssemblerInfo {
+                default_recipe: data.default_recipe.clone().map_or_else(
+                    || BTreeMap::from_iter([(None, Recipe(0))]),
+                    |mapping| {
+                        BTreeMap::from_iter(
+                            mapping
+                                .into_iter()
+                                .map(|(k, v)| (Some(k), recipe_to_id[&v]))
+                                .chain([(None, Recipe(0))]),
+                        )
+                    },
+                ),
+            })
+            .collect();
+
         Self {
             entities,
             power_poles,
             inserters,
+            assemblers,
 
             recipes: vec![RecipeInfo {
+                recipe_identifier: RecipeIdentifier::new_raw("No Recipe".into()),
+
                 inputs: ItemSet::empty(),
                 outputs: ItemSet::empty(),
             }],

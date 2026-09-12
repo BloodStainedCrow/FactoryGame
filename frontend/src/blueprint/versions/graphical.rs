@@ -43,6 +43,7 @@ use data::{
         inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
+    recipe::RecipeIdentifier,
     spacial::{Extent, Flipped, Position, Rotation},
 };
 
@@ -221,7 +222,8 @@ fn build_legend(
             .recipe
             .as_deref()
             .map(|value| {
-                Recipe::try_from(value).map_err(|()| missing(format!("illegal recipe {value:?}")))
+                Recipe::try_from(&RecipeIdentifier::new_raw(value.to_string()))
+                    .map_err(|()| missing(format!("illegal recipe {value:?}")))
             })
             .transpose()?;
 

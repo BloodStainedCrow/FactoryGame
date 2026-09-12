@@ -12,6 +12,7 @@ use data::{
         inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
+    recipe::RecipeIdentifier,
     spacial::{Direction, Flipped, Position, Rotation},
 };
 use log::error;
@@ -445,7 +446,10 @@ impl Into<super::Blueprint> for Blueprint {
                                 kind: BuildingKind::Assembler {
                                     ty,
                                     recipe: Some(
-                                        Recipe::try_from(&*recipe).expect("Failed to load recipe"),
+                                        Recipe::try_from(&RecipeIdentifier::new_raw(
+                                            recipe.to_string(),
+                                        ))
+                                        .expect("Failed to load recipe"),
                                     ),
                                     modules,
                                 },

@@ -169,7 +169,7 @@ impl Surface {
         log::trace!("Add assembler with ty {ty:?} at {top_left:?}");
         let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
-        let default_recipe = default_recipe(ty);
+        let default_recipe = default_recipe(ty, None);
 
         // let connected_pipes: Vec<(!, !)> = todo!("Get pipe connections");
 

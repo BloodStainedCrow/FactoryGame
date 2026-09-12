@@ -1,4 +1,6 @@
-use crate::{EntityPrototypeKind, entity::GlobalTy};
+use std::collections::BTreeMap;
+
+use crate::{DATA_STORE, EntityPrototypeKind, entity::GlobalTy, recipe::RecipeIdentifier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct AssemblerTy(u16);
@@ -26,23 +28,35 @@ impl TryFrom<GlobalTy> for AssemblerTy {
     }
 }
 
+#[derive(Debug)]
+pub struct AssemblerInfo {
+    pub(crate) default_recipe: BTreeMap<Option<()>, Recipe>,
+}
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
 pub struct Recipe(pub(crate) u16);
 
-impl<'a> TryFrom<&'a str> for Recipe {
+impl<'a> TryFrom<&'a RecipeIdentifier> for Recipe {
     type Error = ();
 
-    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
-        // FIXME:
-        Ok(Self(0))
+    fn try_from(value: &'a RecipeIdentifier) -> Result<Self, Self::Error> {
+        DATA_STORE
+            .recipes
+            .iter()
+            .position(|recipe_info| &recipe_info.recipe_identifier == value)
+            .map(|index| Recipe(index.try_into().expect("More than u32::MAX recipies")))
+            .ok_or(())
     }
 }
 
 // This might need more info like the tiles its placed on
 #[must_use]
-pub fn default_recipe(ty: AssemblerTy) -> Recipe {
-    // FIXME:
-    Recipe(0)
+pub fn default_recipe(ty: AssemblerTy, floor: Option<()>) -> Recipe {
+    DATA_STORE.assemblers[ty.0 as usize]
+        .default_recipe
+        .get(&floor)
+        .copied()
+        .unwrap_or_else(|| DATA_STORE.assemblers[ty.0 as usize].default_recipe[&None])
 }
