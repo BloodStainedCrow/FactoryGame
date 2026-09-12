@@ -94,11 +94,11 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
             },
             source_offset: spacial::Offset {
                 x_offs: 0,
-                y_offs: -1,
+                y_offs: 1,
             },
             dest_offset: spacial::Offset {
                 x_offs: 0,
-                y_offs: 1,
+                y_offs: -1,
             },
             movetime: InserterMovementTime::RotationPerSecond { degrees: 864.0 },
             energy_source: EnergySource::ElectricEnergy {

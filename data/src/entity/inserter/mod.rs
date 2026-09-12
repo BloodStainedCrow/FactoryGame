@@ -200,23 +200,23 @@ mod tests {
         for (rotation, input, output) in [
             (
                 Rotation::North,
-                Position { x: 5, y: 4 },
                 Position { x: 5, y: 6 },
+                Position { x: 5, y: 4 },
             ),
             (
                 Rotation::East,
-                Position { x: 6, y: 5 },
                 Position { x: 4, y: 5 },
+                Position { x: 6, y: 5 },
             ),
             (
                 Rotation::South,
-                Position { x: 5, y: 6 },
                 Position { x: 5, y: 4 },
+                Position { x: 5, y: 6 },
             ),
             (
                 Rotation::West,
-                Position { x: 4, y: 5 },
                 Position { x: 6, y: 5 },
+                Position { x: 4, y: 5 },
             ),
         ] {
             assert_eq!(
@@ -237,11 +237,11 @@ mod tests {
 
         assert_eq!(
             get_input_position(BULK_INSERTER, top_left, Rotation::North, flipped),
-            Position { x: 5, y: 6 },
+            Position { x: 5, y: 4 },
         );
         assert_eq!(
             get_output_position(BULK_INSERTER, top_left, Rotation::North, flipped),
-            Position { x: 5, y: 4 },
+            Position { x: 5, y: 6 },
         );
     }
 }
