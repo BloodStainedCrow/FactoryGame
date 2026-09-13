@@ -47,7 +47,7 @@ impl ItemSet {
     }
 
     #[must_use]
-    pub fn is_subset(bigger: &Self, smaller: &Self) -> bool {
+    pub fn is_subset(smaller: &Self, bigger: &Self) -> bool {
         smaller.items.is_subset(&bigger.items)
     }
 

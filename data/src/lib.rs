@@ -308,17 +308,27 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                 stack_size: 100,
             },
         ],
-        recipes: vec![api::recipe::RecipeInfo {
-            name: RecipeName("smelt_iron".into()),
-            ingredients: HashMap::from_iter([(
-                ItemIdentifier::new(&mod_ident, &ItemName("iron_ore".into())),
-                1,
-            )]),
-            results: HashMap::from_iter([(
-                ItemIdentifier::new(&mod_ident, &ItemName("iron_plate".into())),
-                1,
-            )]),
-        }],
+        recipes: vec![
+            api::recipe::RecipeInfo {
+                name: RecipeName("generate_iron".into()),
+                ingredients: HashMap::new(),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("iron_ore".into())),
+                    1,
+                )]),
+            },
+            api::recipe::RecipeInfo {
+                name: RecipeName("smelt_iron".into()),
+                ingredients: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("iron_ore".into())),
+                    1,
+                )]),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("iron_plate".into())),
+                    1,
+                )]),
+            },
+        ],
     }])
 });
 

@@ -164,7 +164,7 @@ impl Middle {
 
         let current_destination_items = self.get_item_in_container(destination_container);
 
-        if ItemSet::is_subset(current_destination_items, item_filter) {
+        if ItemSet::is_subset(item_filter, current_destination_items) {
             return;
         } else {
             let mut destination_items = current_destination_items.clone();
@@ -237,7 +237,7 @@ impl Middle {
             None => &self.get_item_in_container(destination_container),
         };
 
-        if ItemSet::is_subset(items_in_dest, &items_in_edge) {
+        if ItemSet::is_subset(&items_in_edge, items_in_dest) {
             return;
         }
 
