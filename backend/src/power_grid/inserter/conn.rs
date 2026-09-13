@@ -3,14 +3,22 @@ use data::item::{Item, item_set::ItemSet};
 use crate::{
     chests::FullChestIdentifier,
     power_grid::assembler::FullAssemblerIdentifier,
-    transport_lines::{FullTransportLineIdentifier, TransportLineBackendID},
+    transport_lines::{BeltLenType, FullTransportLineIdentifier, TransportLineBackendID},
 };
 
 #[derive(Debug)]
 pub(super) enum InserterConnection {
-    PureChest { item: Item, index: u32 },
-    SushiChest { index: u32 },
-    SushiBelt { id: TransportLineBackendID, pos: ! },
+    PureChest {
+        item: Item,
+        index: u32,
+    },
+    SushiChest {
+        index: u32,
+    },
+    SushiBelt {
+        id: TransportLineBackendID,
+        pos: BeltLenType,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -23,6 +31,7 @@ pub enum BackendInserterConnection<'a> {
     },
     TransportLine {
         ident: FullTransportLineIdentifier<'a>,
+        belt_pos: BeltLenType,
     },
 }
 
@@ -63,9 +72,10 @@ impl BackendInserterConnection<'_> {
             },
             Self::TransportLine {
                 ident: FullTransportLineIdentifier { id, items },
+                belt_pos,
             } => InserterConnection::SushiBelt {
                 id: *id,
-                pos: todo!("We need the position of the belt!!"),
+                pos: *belt_pos,
             },
         }
     }

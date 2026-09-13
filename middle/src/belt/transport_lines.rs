@@ -1,17 +1,24 @@
-use backend::{Backend, transport_lines::TransportLineBackendID};
+use backend::{
+    Backend,
+    transport_lines::{BeltLenType, TransportLineBackendID},
+};
 use data::item::item_set::ItemSet;
-use middle_indices::TransportLineMiddleID;
+use middle_indices::{BeltTileMiddleID, TransportLineMiddleID};
 
 use crate::Middle;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TransportLineInfo {
+    pub length: BeltLenType,
     pub backend_id: TransportLineBackendID,
     pub inferred_items: ItemSet,
+
+    pub connected_tiles: Vec<BeltTileMiddleID>,
 }
 
 #[derive(Debug)]
 pub(super) struct TransportLineAdditionInfo {
+    pub tiles: Vec<BeltTileMiddleID>,
     pub length: u32,
 }
 
@@ -27,7 +34,7 @@ impl Middle {
         info: TransportLineAdditionInfo,
         backend: &mut Backend,
     ) -> TransportLineMiddleID {
-        let TransportLineAdditionInfo { length } = info;
+        let TransportLineAdditionInfo { tiles, length } = info;
 
         let next_index = self.belt_list.next_push_index();
 
@@ -51,6 +58,8 @@ impl Middle {
         };
 
         let index = self.belt_list.push(TransportLineInfo {
+            length,
+            connected_tiles: tiles,
             backend_id,
             inferred_items: ItemSet::empty(),
         });
@@ -58,6 +67,10 @@ impl Middle {
         assert_eq!(next_index, index);
 
         TransportLineMiddleID(index.try_into().expect("More than u32::MAX belts"))
+    }
+
+    pub(super) fn get_transport_line_length(&self, id: TransportLineMiddleID) -> BeltLenType {
+        self.belt_list[id.0 as usize].length
     }
 
     pub(super) fn extent_transport_line(

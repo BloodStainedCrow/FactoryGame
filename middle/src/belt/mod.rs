@@ -1,6 +1,6 @@
-use backend::Backend;
+use backend::{Backend, transport_lines::BeltLenType};
 use itertools::Either;
-use middle_indices::{BeltTileMiddleID, SplitterMiddleID, TransportLineMiddleID};
+use middle_indices::{BeltTileMiddleID, InserterMiddleID, SplitterMiddleID, TransportLineMiddleID};
 
 use crate::{
     Middle,
@@ -47,6 +47,8 @@ pub struct BeltTileAdditionInfo {
 #[derive(Debug, Clone)]
 pub(crate) struct BeltTileInfo {
     pub transport_line: TransportLineMiddleID,
+    pub connected_inserters: Vec<InserterMiddleID>,
+    pub belt_pos: BeltLenType,
 }
 
 impl Middle {
@@ -72,51 +74,69 @@ impl Middle {
 
         let next_index = self.belt_tile_list.next_push_index();
 
-        let transport_line = match front_merge {
+        let transport_line: Option<(TransportLineMiddleID, BeltLenType)> = match front_merge {
             Some(front_belt) => {
                 let transport_line = self.belt_tile_list[front_belt.0 as usize].transport_line;
 
+                let old_length = self.get_transport_line_length(transport_line);
+
                 self.extent_transport_line(transport_line, TransportLineEnd::Back, length, backend);
 
-                Some(transport_line)
+                Some((transport_line, old_length))
             },
             None => None,
         };
 
-        let transport_line = match (transport_line, back_merge) {
-            (None, None) => None,
-            (None, Some(back_belt)) => {
-                let transport_line = self.belt_tile_list[back_belt.0 as usize].transport_line;
+        let transport_line: Option<(TransportLineMiddleID, BeltLenType)> =
+            match (transport_line, back_merge) {
+                (None, None) => None,
+                (None, Some(back_belt)) => {
+                    let transport_line = self.belt_tile_list[back_belt.0 as usize].transport_line;
 
-                self.extent_transport_line(
-                    transport_line,
-                    TransportLineEnd::Front,
-                    length,
-                    backend,
-                );
+                    self.extent_transport_line(
+                        transport_line,
+                        TransportLineEnd::Front,
+                        length,
+                        backend,
+                    );
 
-                Some(transport_line)
-            },
-            (Some(transport_line), None) => Some(transport_line),
-            (Some(front), Some(back_belt)) => {
-                let back = self.belt_tile_list[back_belt.0 as usize].transport_line;
+                    Some((transport_line, 0))
+                },
+                (Some(transport_line), None) => Some(transport_line),
+                (Some((front, front_len)), Some(back_belt)) => {
+                    let back = self.belt_tile_list[back_belt.0 as usize].transport_line;
 
-                let merged = self.merge_transport_lines(front, back, backend);
+                    let merged = self.merge_transport_lines(front, back, backend);
 
-                Some(merged)
-            },
-        };
+                    Some((merged, front_len))
+                },
+            };
 
-        let final_transport_line = match transport_line {
+        let (final_transport_line, belt_pos) = match transport_line {
             Some(transport_line) => {
                 // We already added us to something
                 transport_line
             },
-            None => self.add_transport_line(TransportLineAdditionInfo { length }, backend),
+            None => (
+                self.add_transport_line(
+                    TransportLineAdditionInfo {
+                        tiles: vec![BeltTileMiddleID(
+                            next_index
+                                .try_into()
+                                .expect("More than u32::MAX belt tiles"),
+                        )],
+                        length,
+                    },
+                    backend,
+                ),
+                0,
+            ),
         };
 
         let index = self.belt_tile_list.push(BeltTileInfo {
             transport_line: final_transport_line,
+            connected_inserters: vec![],
+            belt_pos,
         });
 
         assert_eq!(next_index, index);

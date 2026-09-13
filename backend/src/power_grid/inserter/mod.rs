@@ -188,7 +188,10 @@ impl InserterKind {
                         InserterConnection::SushiChest { .. },
                         Some(InserterConnection::SushiChest { .. }),
                     ) => todo!(),
-                    (InserterConnection::SushiBelt { id, pos }, _) => todo!(),
+                    (InserterConnection::SushiBelt { .. }, _) => todo!("Support belt inserters"),
+                    (_, Some(InserterConnection::SushiBelt { .. })) => {
+                        todo!("Support belt inserters")
+                    },
                 },
 
                 _ => todo!(),

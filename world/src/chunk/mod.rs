@@ -5,6 +5,7 @@ use data::{
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use entity_info::{EntityDescriptor, EntityDescriptorKind};
+use enum_map::{Enum, EnumMap};
 use middle_indices::{
     AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
     PowerPoleMiddleID,
@@ -446,30 +447,32 @@ impl From<(Rotation, Flipped)> for RotationWithFlipped {
     }
 }
 
+const MAPPING: EnumMap<RotationWithFlipped, (Rotation, Flipped)> = EnumMap::from_array([
+    (Rotation::North, Flipped::unflipped()),
+    (Rotation::East, Flipped::unflipped()),
+    (Rotation::South, Flipped::unflipped()),
+    (Rotation::West, Flipped::unflipped()),
+    (Rotation::North, Flipped::both()),
+    (Rotation::East, Flipped::both()),
+    (Rotation::South, Flipped::both()),
+    (Rotation::West, Flipped::both()),
+    (Rotation::North, Flipped::horizontal()),
+    (Rotation::East, Flipped::horizontal()),
+    (Rotation::South, Flipped::horizontal()),
+    (Rotation::West, Flipped::horizontal()),
+    (Rotation::North, Flipped::vertical()),
+    (Rotation::East, Flipped::vertical()),
+    (Rotation::South, Flipped::vertical()),
+    (Rotation::West, Flipped::vertical()),
+]);
+
 impl From<RotationWithFlipped> for (Rotation, Flipped) {
     fn from(value: RotationWithFlipped) -> Self {
-        match value {
-            RotationWithFlipped::North => (Rotation::North, Flipped::unflipped()),
-            RotationWithFlipped::East => (Rotation::East, Flipped::unflipped()),
-            RotationWithFlipped::South => (Rotation::South, Flipped::unflipped()),
-            RotationWithFlipped::West => (Rotation::West, Flipped::unflipped()),
-            RotationWithFlipped::HVNorth => (Rotation::North, Flipped::both()),
-            RotationWithFlipped::HVEast => (Rotation::East, Flipped::both()),
-            RotationWithFlipped::HVSouth => (Rotation::South, Flipped::both()),
-            RotationWithFlipped::HVWest => (Rotation::West, Flipped::both()),
-            RotationWithFlipped::HNorth => (Rotation::North, Flipped::horizontal()),
-            RotationWithFlipped::HEast => (Rotation::East, Flipped::horizontal()),
-            RotationWithFlipped::HSouth => (Rotation::South, Flipped::horizontal()),
-            RotationWithFlipped::HWest => (Rotation::West, Flipped::horizontal()),
-            RotationWithFlipped::VNorth => (Rotation::North, Flipped::vertical()),
-            RotationWithFlipped::VEast => (Rotation::East, Flipped::vertical()),
-            RotationWithFlipped::VSouth => (Rotation::South, Flipped::vertical()),
-            RotationWithFlipped::VWest => (Rotation::West, Flipped::vertical()),
-        }
+        MAPPING[value]
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 enum RotationWithFlipped {
     HVNorth,
     HVEast,

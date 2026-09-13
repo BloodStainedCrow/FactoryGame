@@ -14,11 +14,15 @@ use data::{
     item::item_set::ItemSet,
     recipe::{get_items_consumed_by_recipe, get_items_produced_by_recipe},
 };
+use itertools::Either;
 use middle_indices::{
     AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, TransportLineMiddleID,
 };
 
-use crate::{Middle, belt::TransportLineInfo};
+use crate::{
+    Middle,
+    belt::{BeltTileInfo, TransportLineInfo},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Conn {
@@ -38,7 +42,7 @@ impl Conn {
         match self {
             Self::Assembler { id } => None,
             Self::Chest { id } => Some(Container::Chest { id }),
-            Self::BeltTile { id } => {
+            Self::BeltTile { id, .. } => {
                 let id = middle.belt_tile_list[id.0 as usize].transport_line;
 
                 Some(Container::TransportLine { id })
@@ -70,16 +74,25 @@ impl Middle {
                 },
             },
             Conn::BeltTile { id } => {
+                let BeltTileInfo {
+                    transport_line,
+                    connected_inserters,
+                    belt_pos,
+                } = &self.belt_tile_list[id.0 as usize];
+
                 let TransportLineInfo {
+                    length,
                     backend_id,
                     inferred_items,
-                } = &self.belt_list[self.belt_tile_list[id.0 as usize].transport_line.0 as usize];
+                    connected_tiles,
+                } = &self.belt_list[transport_line.0 as usize];
 
                 BackendInserterConnection::TransportLine {
                     ident: FullTransportLineIdentifier {
                         id: *backend_id,
                         items: inferred_items,
                     },
+                    belt_pos: *belt_pos,
                 }
             },
         }
@@ -97,7 +110,7 @@ impl Middle {
             Conn::Chest { id } => self
                 .get_item_in_container(Container::Chest { id: id })
                 .clone(),
-            Conn::BeltTile { id } => self
+            Conn::BeltTile { id, .. } => self
                 .get_item_in_container(Container::TransportLine {
                     id: self.belt_tile_list[id.0 as usize].transport_line,
                 })
@@ -114,8 +127,8 @@ impl Middle {
 
                 get_items_consumed_by_recipe(recipe)
             },
-            Conn::Chest { id } => ItemSet::all(),
-            Conn::BeltTile { id } => ItemSet::all(),
+            Conn::Chest { .. } => ItemSet::all(),
+            Conn::BeltTile { .. } => ItemSet::all(),
         }
     }
 
@@ -322,8 +335,15 @@ impl Middle {
         edge_changes: &mut BTreeMap<Edge, ItemSet>,
     ) {
         let inserters = match container {
-            Container::Chest { id } => self.chest_list[id.0 as usize].connected_inserters.iter(),
-            Container::TransportLine { id } => todo!(),
+            Container::Chest { id } => {
+                Either::Left(self.chest_list[id.0 as usize].connected_inserters.iter())
+            },
+            Container::TransportLine { id } => Either::Right(
+                self.belt_list[id.0 as usize]
+                    .connected_tiles
+                    .iter()
+                    .flat_map(|tile| &self.belt_tile_list[tile.0 as usize].connected_inserters),
+            ),
         };
 
         for inserter in inserters {
