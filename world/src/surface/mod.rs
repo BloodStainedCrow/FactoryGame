@@ -14,7 +14,7 @@ use data::{
     item::item_set::ItemSet,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
-use entity_info::{EntityInfo, EntityInfoKind};
+use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
 use itertools::Itertools;
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
@@ -28,10 +28,7 @@ use middle_indices::ChestMiddleID;
 use smallvec::SmallVec;
 use thiserror::Error;
 
-use crate::{
-    entity::{EntityDescriptor, EntityDescriptorKind},
-    surface::world::{CanFitError, SurfaceWorld},
-};
+use crate::surface::world::{CanFitError, SurfaceWorld};
 
 mod belt_logic;
 mod inserter_logic;
@@ -386,9 +383,9 @@ impl Surface {
             }
         }
 
-        let connected_entities: Vec<_> = self
-            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped))
-            .collect();
+        let connected_entities = self
+            .world
+            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped));
 
         let index = self.middle.add_power_pole(
             PowerPoleAdditionInfo {

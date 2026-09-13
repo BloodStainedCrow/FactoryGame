@@ -4,12 +4,12 @@ use data::{
     max_entity_size,
     spacial::{BoundingBox, Position},
 };
+use entity_info::EntityDescriptor;
 use itertools::Itertools;
 use thiserror::Error;
 
 use crate::{
     chunk::{CHUNK_SIZE, Chunk},
-    entity::EntityDescriptor,
     sparse_grid::{SparseGrid, dynamic::DynamicGrid},
 };
 
@@ -64,7 +64,8 @@ impl SurfaceWorld {
 
         let collision = self
             .get_chunks_that_could_contain_entities_colliding_with(
-                goal_bounding_box.extend_evenly(max_entity_size()),
+                // TODO: Make sure that `extend_towards_negative` is correct.
+                goal_bounding_box.extend_towards_negative(max_entity_size()),
             )
             .flat_map(|(chunk, base_pos)| chunk.occupied_bounding_boxes(base_pos))
             .find(|entity_bounding_box| entity_bounding_box.overlaps(goal_bounding_box));
@@ -111,7 +112,6 @@ impl SurfaceWorld {
         &self,
         bounding_box: BoundingBox,
     ) -> impl Iterator<Item = (&Chunk, Position)> {
-        // TODO: This should prob be factored out
         let top_left = get_chunk_indices_for_tile(bounding_box.top_left());
         let bottom_right = get_chunk_indices_for_tile(bounding_box.bottom_right());
 
@@ -149,7 +149,7 @@ impl SurfaceWorld {
     ) -> impl Iterator<Item = EntityDescriptor> {
         self.get_chunks_that_could_contain_entities_colliding_with(
             // TODO: This would actually be max_power_pole_size instead
-            bounding_box.extend_evenly(max_entity_size()),
+            bounding_box.extend_towards_negative(max_entity_size()),
         )
         .flat_map(|(chunk, base_pos)| chunk.get_power_pole_entities(base_pos))
         .filter(move |e| e.overlaps(bounding_box))
@@ -160,7 +160,7 @@ impl SurfaceWorld {
         bounding_box: BoundingBox,
     ) -> impl Iterator<Item = EntityDescriptor> {
         self.get_chunks_that_could_contain_entities_colliding_with(
-            bounding_box.extend_evenly(max_entity_size()),
+            bounding_box.extend_towards_negative(max_entity_size()),
         )
         .flat_map(|(chunk, base_pos)| chunk.get_entities(base_pos))
         .filter(move |e| e.overlaps(bounding_box))

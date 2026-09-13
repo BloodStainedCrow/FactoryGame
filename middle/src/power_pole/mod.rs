@@ -6,7 +6,7 @@ use backend::{
     },
 };
 use data::spacial::Position;
-use entity_info::{EntityInfo, EntityInfoKind};
+use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use itertools::Itertools;
 use middle_indices::{PowerGridMiddleID, PowerPoleMiddleID};
 use smallvec::SmallVec;
@@ -22,7 +22,7 @@ pub(crate) struct MiddlePowerPoleInfo {
     grid_id: PowerGridMiddleID,
 }
 
-pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityInfo>> {
+pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityDescriptor>> {
     pub position: Position,
     pub connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     pub connected_entities: I,
@@ -34,7 +34,7 @@ impl Middle {
     #[must_use]
     pub fn add_power_pole(
         &mut self,
-        info: PowerPoleAdditionInfo<impl IntoIterator<Item = EntityInfo>>,
+        info: PowerPoleAdditionInfo<impl IntoIterator<Item = EntityDescriptor>>,
         backend: &mut Backend,
     ) -> PowerPoleMiddleID {
         let PowerPoleAdditionInfo {
@@ -306,12 +306,12 @@ impl Middle {
 
     fn make_entity_powered_by_grid(
         &mut self,
-        entity: EntityInfo,
+        entity: EntityDescriptor,
         new_grid: PowerGridMiddleID,
         backend: &mut Backend,
     ) {
         match entity.kind {
-            EntityInfoKind::Assembler { middle_id, .. } => {
+            EntityDescriptorKind::Assembler { id: middle_id, .. } => {
                 let info = &mut self.assembler_list[middle_id.0 as usize];
 
                 let current_grid_backend =
@@ -336,7 +336,7 @@ impl Middle {
                     backend::AdditionResult::Failed { info } => todo!(),
                 }
             },
-            EntityInfoKind::Inserter { middle_id, .. } => {
+            EntityDescriptorKind::Inserter { id: middle_id, .. } => {
                 let info = &self.inserter_list[middle_id.0 as usize];
 
                 let current_grid_backend =
@@ -372,9 +372,11 @@ impl Middle {
                     backend::AdditionResult::Failed { info } => todo!(),
                 }
             },
-            EntityInfoKind::PowerPole { .. } => unreachable!(),
-            EntityInfoKind::Chest { .. } => unreachable!(),
-            EntityInfoKind::Belt { .. } => unreachable!(),
+            EntityDescriptorKind::SolarPanel { .. } => todo!(),
+            EntityDescriptorKind::PowerPole { .. } => unreachable!(),
+            EntityDescriptorKind::Chest { .. } => unreachable!(),
+            EntityDescriptorKind::Belt { .. } => unreachable!(),
+            EntityDescriptorKind::Pipe { .. } => unreachable!(),
         }
     }
 }

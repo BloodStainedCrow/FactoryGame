@@ -1,12 +1,15 @@
+use std::iter;
+
 use data::{
     entity::{
-        GlobalTy, assember::AssemblerTy, belt::BeltTy, chest::ChestTy, inserter::InserterTy,
-        power_pole::PowerPoleTy,
+        GlobalTy, assember::AssemblerTy, belt::BeltTy, bounding_box, chest::ChestTy,
+        inserter::InserterTy, power_pole::PowerPoleTy,
     },
-    spacial::{Flipped, Position, Rotation},
+    spacial::{BoundingBox, Flipped, Position, Rotation},
 };
 use middle_indices::{
-    AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, PowerPoleMiddleID,
+    AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
+    PowerPoleMiddleID,
 };
 
 #[derive(Debug)]
@@ -67,4 +70,54 @@ pub enum EntityInfoKind {
         ty: BeltTy,
         middle_id: BeltTileMiddleID,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntityDescriptor {
+    pub position: Position,
+    pub rotation: Rotation,
+    pub flipped: Flipped,
+    pub ty: GlobalTy,
+
+    pub kind: EntityDescriptorKind,
+}
+
+impl EntityDescriptor {
+    fn get_pipe_connections(&self) -> impl Iterator<Item = !> {
+        match self.kind {
+            EntityDescriptorKind::Assembler { .. } => todo!(),
+            EntityDescriptorKind::Pipe { .. } => todo!(),
+            _ => iter::empty(),
+        }
+    }
+
+    pub fn can_be_powered_by_a_pole(&self) -> bool {
+        // TODO: Some kinds might not want to be powered
+        match self.kind {
+            EntityDescriptorKind::Assembler { .. } => true,
+            EntityDescriptorKind::Pipe { .. } => false,
+            EntityDescriptorKind::Inserter { .. } => true,
+            EntityDescriptorKind::Belt { .. } => false,
+            EntityDescriptorKind::PowerPole { .. } => false,
+            EntityDescriptorKind::SolarPanel { .. } => true,
+            EntityDescriptorKind::Chest { .. } => false,
+            EntityDescriptorKind::Inserter { .. } => true,
+        }
+    }
+
+    pub fn overlaps(&self, other: BoundingBox) -> bool {
+        bounding_box(self.ty, self.position, self.rotation, self.flipped).overlaps(other)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityDescriptorKind {
+    Assembler { id: AssemblerMiddleID },
+    Inserter { id: InserterMiddleID },
+    Belt { id: BeltTileMiddleID },
+    Pipe { id: PipeMiddleID },
+    PowerPole { id: PowerPoleMiddleID },
+    Chest { id: ChestMiddleID },
+    SolarPanel {},
+    // ...
 }

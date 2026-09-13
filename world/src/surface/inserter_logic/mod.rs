@@ -1,12 +1,10 @@
 use std::collections::btree_map::Entry;
 
 use data::spacial::Position;
+use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use middle::{chest::ChestAdditionInfo, inserter::conn::Conn};
 
-use crate::{
-    entity::{EntityDescriptor, EntityDescriptorKind},
-    surface::Surface,
-};
+use crate::surface::Surface;
 
 impl Surface {
     pub fn get_source_conns_or_add_floor_conn(&mut self, position: Position) -> Vec<Conn> {
@@ -52,7 +50,12 @@ impl Surface {
     }
 }
 
-impl EntityDescriptor {
+trait ConnTrait {
+    fn get_source_conn(&self) -> Vec<Conn>;
+    fn get_dest_conn(&self) -> Option<Conn>;
+}
+
+impl ConnTrait for EntityDescriptor {
     fn get_source_conn(&self) -> Vec<Conn> {
         match self.kind {
             EntityDescriptorKind::Assembler { id } => vec![Conn::Assembler { id }],

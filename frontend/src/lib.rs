@@ -1,10 +1,9 @@
+use std::time::Instant;
+
 use data::spacial::{BoundingBox, Extent, Position};
 use world::surface::{Surface, SurfaceCreationOptions};
 
-use crate::{
-    action::{BuildingInfo, BuildingKind},
-    blueprint::{Blueprint, string::BlueprintString},
-};
+use crate::blueprint::{Blueprint, string::BlueprintString};
 
 mod action;
 pub mod blueprint;
@@ -67,25 +66,12 @@ impl Default for GameState {
 
         // assert_eq!(bp, round_trip);
 
-        dbg!(
-            bp.get_actions()
-                .filter(|a| matches!(
-                    a,
-                    action::ActionKind::PlaceBuilding {
-                        building_info: BuildingInfo {
-                            kind: BuildingKind::Assembler { .. },
-                            ..
-                        },
-                        ..
-                    }
-                ))
-                .count()
-        );
-
+        let start = Instant::now();
         for action in bp.get_actions() {
             ret.apply_action(action)
-                .expect(&format!("Failed to apply action {:?}", action));
+                .unwrap_or_else(|_| panic!("Failed to apply action {:?}", action));
         }
+        dbg!(start.elapsed());
 
         ret
     }

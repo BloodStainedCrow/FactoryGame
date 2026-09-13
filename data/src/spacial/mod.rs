@@ -244,12 +244,18 @@ impl Extent {
 impl BoundingBox {
     #[must_use]
     pub const fn new(top_left: Position, extent: Extent) -> Self {
-        assert!(extent.width > 0);
-        assert!(extent.height > 0);
+        debug_assert!(extent.width > 0);
+        debug_assert!(extent.height > 0);
 
         let bottom_right = Position {
-            x: top_left.x.strict_add_unsigned(extent.width).strict_sub(1),
-            y: top_left.y.strict_add_unsigned(extent.height).strict_sub(1),
+            x: top_left
+                .x
+                .wrapping_add_unsigned(extent.width)
+                .wrapping_sub(1),
+            y: top_left
+                .y
+                .wrapping_add_unsigned(extent.height)
+                .wrapping_sub(1),
         };
 
         Self {
@@ -369,6 +375,20 @@ impl BoundingBox {
             bottom_right: Position {
                 x: self.bottom_right.x.strict_add_unsigned(amount),
                 y: self.bottom_right.y.strict_add_unsigned(amount),
+            },
+        }
+    }
+
+    #[must_use]
+    pub const fn extend_towards_negative(self, amount: u32) -> Self {
+        Self {
+            top_left: Position {
+                x: self.top_left.x.strict_sub_unsigned(amount),
+                y: self.top_left.y.strict_sub_unsigned(amount),
+            },
+            bottom_right: Position {
+                x: self.bottom_right.x,
+                y: self.bottom_right.y,
             },
         }
     }

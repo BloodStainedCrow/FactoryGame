@@ -4,12 +4,11 @@ use data::{
     get_kind,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
+use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use middle_indices::{
     AssemblerMiddleID, BeltTileMiddleID, ChestMiddleID, InserterMiddleID, PipeMiddleID,
     PowerPoleMiddleID,
 };
-
-use crate::entity::{EntityDescriptor, EntityDescriptorKind};
 
 pub const CHUNK_SIZE: u8 = 16;
 
