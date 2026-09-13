@@ -133,7 +133,7 @@ impl GameState {
                         ty,
                         recipe,
                         ref modules,
-                    } => surface.add_assembler(ty, top_left, rotation, flipped)?,
+                    } => surface.add_assembler(ty, top_left, rotation, flipped, recipe)?,
                     &BuildingKind::PowerPole { ty } => {
                         surface.add_power_pole(ty, top_left, rotation, flipped)?
                     },

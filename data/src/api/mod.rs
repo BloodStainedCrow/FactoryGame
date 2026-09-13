@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    collections::{BTreeMap, HashMap},
+    iter,
+};
 
 use crate::{
     DataStore, EntityIdentifier, EntityPrototypeKind, ModIdentifier,
@@ -11,7 +14,7 @@ use crate::{
         recipe::RecipeInfo,
     },
     entity::{GlobalTy, assember::Recipe, power_pole::PowerPoleData},
-    item::Item,
+    item::{Item, item_set::ItemSet},
     spacial::{Extent, Offset},
 };
 
@@ -112,22 +115,25 @@ impl DataStore {
             })
             .collect();
 
-        let recipes: Vec<_> = mods
-            .iter()
-            .flat_map(|mod_| {
-                let ModData { recipes, .. } = mod_;
+        let recipes: Vec<_> = iter::once(crate::recipe::RecipeInfo {
+            recipe_identifier: RecipeIdentifier::new_raw("no_recipe".to_string()),
+            inputs: ItemSet::empty(),
+            outputs: ItemSet::empty(),
+        })
+        .chain(mods.iter().flat_map(|mod_| {
+            let ModData { recipes, .. } = mod_;
 
-                recipes.iter().map(|recipe| crate::recipe::RecipeInfo {
-                    recipe_identifier: RecipeIdentifier::new(&mod_.mod_name, &recipe.name),
-                    inputs: recipe
-                        .ingredients
-                        .keys()
-                        .map(|item| item_to_id[item])
-                        .collect(),
-                    outputs: recipe.results.keys().map(|item| item_to_id[item]).collect(),
-                })
+            recipes.iter().map(|recipe| crate::recipe::RecipeInfo {
+                recipe_identifier: RecipeIdentifier::new(&mod_.mod_name, &recipe.name),
+                inputs: recipe
+                    .ingredients
+                    .keys()
+                    .map(|item| item_to_id[item])
+                    .collect(),
+                outputs: recipe.results.keys().map(|item| item_to_id[item]).collect(),
             })
-            .collect();
+        }))
+        .collect();
 
         assert!(u16::try_from(entities.len()).is_ok());
 

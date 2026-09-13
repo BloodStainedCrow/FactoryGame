@@ -4,7 +4,7 @@ use backend::Backend;
 use data::{
     entity::{
         GlobalTy, allows_flipping, allows_rotation,
-        assember::{AssemblerTy, default_recipe},
+        assember::{AssemblerTy, Recipe, default_recipe},
         belt::BeltTy,
         bounding_box,
         chest::{ChestTy, num_slots},
@@ -165,11 +165,12 @@ impl Surface {
         top_left: Position,
         rotation: Rotation,
         flipped: Flipped,
+        recipe: Option<Recipe>,
     ) -> Result<(), PlaceEntityError> {
         log::trace!("Add assembler with ty {ty:?} at {top_left:?}");
         let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
-        let default_recipe = default_recipe(ty, None);
+        let recipe = recipe.unwrap_or_else(|| default_recipe(ty, None));
 
         // let connected_pipes: Vec<(!, !)> = todo!("Get pipe connections");
 
@@ -187,7 +188,7 @@ impl Surface {
 
         let middle_assembler_id = self.middle.add_assembler(
             &AssemblerAdditionInfo {
-                recipe: default_recipe,
+                recipe,
                 // TODO:
                 power_grid: UNATTACHED_POWER_GRID_ID,
             },
