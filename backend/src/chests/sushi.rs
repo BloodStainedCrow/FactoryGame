@@ -3,10 +3,12 @@ use std::{cmp::min, num::NonZero};
 use data::item::{Item, ItemCountType, ItemStack, max_stack_size};
 use static_assertions::const_assert_eq;
 
+use crate::chests::FullChestState;
+
 pub type ItemStackIndex = u16;
 
 #[derive(Debug, Clone, Copy)]
-struct SushiSlot {
+pub(super) struct SushiSlot {
     content: Option<ItemStack>,
 }
 
@@ -23,6 +25,10 @@ impl SushiSlot {
             stack.count == max_stack_size
         })
     }
+
+    fn is_empty(self) -> bool {
+        self.content.as_ref().is_none()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +41,44 @@ pub struct SushiChest {
     // Alternatively I could store the chest ty and look it up from that (by making floor chests a hardcoded ty)
     // That is probably better?
     stack_size_override: Option<NonZero<ItemCountType>>,
+}
+
+impl From<SushiChest> for FullChestState {
+    fn from(value: SushiChest) -> Self {
+        Self {
+            slots: value.slots.into(),
+            stack_size_override: value.stack_size_override,
+        }
+    }
+}
+
+impl From<FullChestState> for SushiChest {
+    fn from(value: FullChestState) -> Self {
+        let slots: Box<[SushiSlot]> = value.slots.into();
+        let first_non_full_slot = slots
+            .iter()
+            .position(|slot| !slot.is_full(value.stack_size_override))
+            .unwrap_or(slots.len()) as u16;
+        let first_slot_with_all_empty_after = slots
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, slot)| (!slot.is_empty()).then_some(idx))
+            .unwrap_or(0) as u16;
+        let automatic_insertion_slot_limit = slots.len() as u16;
+
+        let ret = Self {
+            slots,
+            first_non_full_slot,
+            first_slot_with_all_empty_after,
+            automatic_insertion_slot_limit,
+            stack_size_override: value.stack_size_override,
+        };
+
+        ret.assert_invariants();
+
+        ret
+    }
 }
 
 impl SushiChest {

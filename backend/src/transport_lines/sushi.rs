@@ -5,7 +5,7 @@ use data::item::Item;
 use crate::transport_lines::BeltLenType;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub(super) struct SushiTransportLine {
+pub(crate) struct SushiTransportLine {
     is_circular: bool,
     locs: VecDeque<Option<Item>>,
 }

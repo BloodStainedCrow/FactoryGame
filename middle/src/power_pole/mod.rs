@@ -344,17 +344,14 @@ impl Middle {
 
                 let sources = info
                     .sources
-                    .iter()
-                    .flatten()
-                    .map(|conn| self.get_backend_conn(*conn))
-                    .collect_vec();
+                    .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
 
                 match backend.move_inserter(
                     FullInserterIdentifier {
                         grid: current_grid_backend,
                         inserter_id: info.backend_id,
                         inferred_items: &info.inferred_items,
-                        source: &sources,
+                        source: sources,
                         dest: info.dest.map(|dest| self.get_backend_conn(dest)),
                         movetime: info.movetime,
                     },

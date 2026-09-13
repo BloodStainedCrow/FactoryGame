@@ -14,7 +14,7 @@ use crate::{
 pub mod conn;
 pub(crate) mod store;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InserterBackendID(pub(crate) u32);
 
 #[derive(Debug)]
@@ -29,12 +29,12 @@ pub struct InserterAdditionInfo<'a> {
     pub movetime: u16,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FullInserterIdentifier<'a> {
     pub grid: PowerGridBackendID,
     pub inserter_id: InserterBackendID,
     pub inferred_items: &'a ItemSet,
-    pub source: &'a [BackendInserterConnection<'a>],
+    pub source: [Option<BackendInserterConnection<'a>>; 2],
     pub dest: Option<BackendInserterConnection<'a>>,
     pub movetime: u16,
 }
@@ -60,7 +60,7 @@ impl Backend {
         )
     }
 
-    fn add_inserter_internal(
+    pub(crate) fn add_inserter_internal(
         &mut self,
         grid: PowerGridBackendID,
         kind: InserterKind,
@@ -75,13 +75,12 @@ impl Backend {
             relocations: vec![],
         }
     }
-
     /// NOTE: This inserter needs to already not have any inserter connections
     pub fn remove_inserter(&mut self, inserter: FullInserterIdentifier) {
         todo!()
     }
 
-    fn remove_inserter_internal(
+    pub(crate) fn remove_inserter_internal(
         &mut self,
         inserter: FullInserterIdentifier,
     ) -> (SingleInserterInfo, InserterKind) {
@@ -112,6 +111,7 @@ impl Backend {
 }
 
 // TODO: Move this
+#[derive(Debug)]
 pub enum InserterKind {
     EmptyInserter {},
 
@@ -128,7 +128,7 @@ impl InserterKind {
         Self::from_data((
             ident.movetime,
             &ident.inferred_items,
-            ident.source,
+            &ident.source.into_iter().flatten().collect_vec(),
             ident.dest,
         ))
     }

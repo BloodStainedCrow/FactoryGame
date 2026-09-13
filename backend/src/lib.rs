@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub mod chests;
-mod graph_changes;
+pub mod graph_changes;
 mod inserter;
 pub mod liquid;
 pub mod power_grid;
@@ -28,6 +28,7 @@ pub struct RelocationInfo<MiddleID, BackendID> {
     pub new_backend: BackendID,
 }
 
+#[derive(Debug)]
 pub enum AdditionResult<MiddleID, BackendID> {
     Added {
         new_id: BackendID,

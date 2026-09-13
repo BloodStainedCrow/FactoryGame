@@ -13,7 +13,7 @@ pub(super) enum InserterConnection {
     SushiBelt { id: TransportLineBackendID, pos: ! },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BackendInserterConnection<'a> {
     Assembler {
         ident: FullAssemblerIdentifier,
@@ -43,15 +43,20 @@ impl BackendInserterConnection<'_> {
                         grid,
                         assembler_id,
                     },
-            } => todo!(),
+            } => match inserter_items.is_pure() {
+                // TODO: Get the assembler slot index
+                Ok(pure_item) => InserterConnection::PureChest {
+                    item: pure_item,
+                    index: u32::MAX,
+                },
+                Err(None) => unreachable!(),
+                Err(Some(_)) => todo!("Multiple items"),
+            },
             Self::Chest {
                 ident: FullChestIdentifier { items, id },
             } => {
                 if let Ok(item) = items.is_pure() {
-                    InserterConnection::PureChest {
-                        item,
-                        index: todo!(),
-                    }
+                    InserterConnection::PureChest { item, index: id.0 }
                 } else {
                     InserterConnection::SushiChest { index: id.0 }
                 }

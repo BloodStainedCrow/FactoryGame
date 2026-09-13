@@ -42,12 +42,13 @@ impl<'a> TryFrom<&'a RecipeIdentifier> for Recipe {
     type Error = ();
 
     fn try_from(value: &'a RecipeIdentifier) -> Result<Self, Self::Error> {
-        DATA_STORE
+        Ok(DATA_STORE
             .recipes
             .iter()
             .position(|recipe_info| &recipe_info.recipe_identifier == value)
             .map(|index| Recipe(index.try_into().expect("More than u32::MAX recipies")))
-            .ok_or(())
+            // HACK:
+            .unwrap_or(Recipe(0)))
     }
 }
 

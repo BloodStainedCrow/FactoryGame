@@ -1,9 +1,13 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use backend::{
     Backend,
     chests::FullChestIdentifier,
-    power_grid::{assembler::FullAssemblerIdentifier, inserter::conn::BackendInserterConnection},
+    graph_changes::{GraphChanges, NewChestState, NewInserterState, NewTransportLineState},
+    power_grid::{
+        assembler::FullAssemblerIdentifier,
+        inserter::{FullInserterIdentifier, conn::BackendInserterConnection},
+    },
     transport_lines::FullTransportLineIdentifier,
 };
 use data::{
@@ -16,14 +20,14 @@ use middle_indices::{
 
 use crate::{Middle, belt::TransportLineInfo};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Conn {
     Assembler { id: AssemblerMiddleID },
     Chest { id: ChestMiddleID },
     BeltTile { id: BeltTileMiddleID },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Container {
     Chest { id: ChestMiddleID },
     TransportLine { id: TransportLineMiddleID },
@@ -43,7 +47,7 @@ impl Conn {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum Edge {
     Inserter { id: InserterMiddleID },
 }
@@ -129,8 +133,8 @@ impl Middle {
         item_filter: &ItemSet,
         backend: &mut Backend,
     ) {
-        let mut container_changes: HashMap<Container, ItemSet> = HashMap::new();
-        let mut edge_changes: HashMap<Edge, ItemSet> = HashMap::new();
+        let mut container_changes: BTreeMap<Container, ItemSet> = BTreeMap::new();
+        let mut edge_changes: BTreeMap<Edge, ItemSet> = BTreeMap::new();
 
         self.apply_effect_of_new_edge_internal(
             source,
@@ -140,13 +144,146 @@ impl Middle {
             &mut edge_changes,
         );
 
-        if container_changes.is_empty() && edge_changes.is_empty() {
-        } else {
-            todo!(
-                "Apply changes to self and backend: {:?} and {:?}",
-                container_changes,
-                edge_changes
-            )
+        if !container_changes.is_empty() || !edge_changes.is_empty() {
+            let inserter_changes = edge_changes
+                .iter()
+                .filter_map(|(edge, items)| match edge {
+                    Edge::Inserter { id } => Some((id, items)),
+                    _ => None,
+                })
+                .map(|(ins_id, new_items)| {
+                    let ins = &self.inserter_list[ins_id.0 as usize];
+
+                    let sources = ins
+                        .sources
+                        .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
+
+                    (
+                        FullInserterIdentifier {
+                            grid: self.power_grid_list[ins.power_grid_id.0 as usize].backend_id,
+                            inserter_id: ins.backend_id,
+                            inferred_items: &ins.inferred_items,
+                            source: sources,
+                            dest: ins.dest.map(|dest| self.get_backend_conn(dest)),
+                            movetime: ins.movetime,
+                        },
+                        NewInserterState {
+                            middle_id: *ins_id,
+                            inferred_items: new_items.clone(),
+                        },
+                    )
+                })
+                .collect();
+
+            let chest_changes = container_changes
+                .iter()
+                .filter_map(|(container, items)| match container {
+                    Container::Chest { id } => Some((id, items)),
+                    _ => None,
+                })
+                .map(|(chest_id, new_items)| {
+                    let chest = &self.chest_list[chest_id.0 as usize];
+
+                    (
+                        FullChestIdentifier {
+                            items: &chest.inferred_items,
+                            id: chest.backend_id,
+                        },
+                        NewChestState {
+                            middle_id: *chest_id,
+                            inferred_items: new_items.clone(),
+                        },
+                    )
+                })
+                .collect();
+
+            let belt_changes = container_changes
+                .iter()
+                .filter_map(|(container, items)| match container {
+                    Container::TransportLine { id } => Some((id, items)),
+                    _ => None,
+                })
+                .map(|(tl_id, new_items)| {
+                    let tl = &self.belt_list[tl_id.0 as usize];
+
+                    (
+                        FullTransportLineIdentifier {
+                            items: &tl.inferred_items,
+                            id: tl.backend_id,
+                        },
+                        NewTransportLineState {
+                            middle_id: *tl_id,
+                            inferred_items: new_items.clone(),
+                        },
+                    )
+                })
+                .collect();
+
+            let res = backend.apply_graph_changes(GraphChanges {
+                chest_changes,
+                inserter_changes,
+                transport_line_changes: belt_changes,
+            });
+
+            for (res, new_state) in res.chest_updates {
+                match res {
+                    backend::AdditionResult::Added {
+                        new_id,
+                        relocations,
+                    } => {
+                        if !relocations.is_empty() {
+                            todo!("Apply relocations")
+                        }
+
+                        let middle_id = new_state.middle_id;
+
+                        self.chest_list[middle_id.0 as usize].backend_id = new_id;
+                        self.chest_list[middle_id.0 as usize].inferred_items =
+                            new_state.inferred_items;
+                    },
+                    backend::AdditionResult::Failed { info } => unreachable!(),
+                }
+            }
+
+            for (res, new_state) in res.transport_lines_updates {
+                match res {
+                    backend::AdditionResult::Added {
+                        new_id,
+                        relocations,
+                    } => {
+                        if !relocations.is_empty() {
+                            todo!("Apply relocations")
+                        }
+
+                        let middle_id = new_state.middle_id;
+
+                        self.belt_list[middle_id.0 as usize].backend_id = new_id;
+                        self.belt_list[middle_id.0 as usize].inferred_items =
+                            new_state.inferred_items;
+                    },
+                    backend::AdditionResult::Failed { info } => unreachable!(),
+                }
+            }
+
+            for (res, new_state) in res.inserter_updates {
+                match res {
+                    backend::AdditionResult::Added {
+                        new_id,
+                        relocations,
+                    } => {
+                        if !relocations.is_empty() {
+                            todo!("Apply relocations")
+                        }
+
+                        let middle_id = new_state.middle_id;
+
+                        self.inserter_list[middle_id.0 as usize].backend_id = new_id;
+                        self.inserter_list[middle_id.0 as usize].inferred_items =
+                            new_state.inferred_items;
+                    },
+                    backend::AdditionResult::Failed { info } => unreachable!(),
+                }
+            }
         }
     }
 
@@ -155,8 +292,8 @@ impl Middle {
         source: Conn,
         dest: Conn,
         item_filter: &ItemSet,
-        container_changes: &mut HashMap<Container, ItemSet>,
-        edge_changes: &mut HashMap<Edge, ItemSet>,
+        container_changes: &mut BTreeMap<Container, ItemSet>,
+        edge_changes: &mut BTreeMap<Edge, ItemSet>,
     ) {
         let Some(destination_container) = dest.get_container(self) else {
             return;
@@ -181,8 +318,8 @@ impl Middle {
     fn container_content_has_changed(
         &self,
         container: Container,
-        container_changes: &mut HashMap<Container, ItemSet>,
-        edge_changes: &mut HashMap<Edge, ItemSet>,
+        container_changes: &mut BTreeMap<Container, ItemSet>,
+        edge_changes: &mut BTreeMap<Edge, ItemSet>,
     ) {
         let inserters = match container {
             Container::Chest { id } => self.chest_list[id.0 as usize].connected_inserters.iter(),
@@ -197,8 +334,8 @@ impl Middle {
     fn inserter_input_has_changed(
         &self,
         inserter: InserterMiddleID,
-        container_changes: &mut HashMap<Container, ItemSet>,
-        edge_changes: &mut HashMap<Edge, ItemSet>,
+        container_changes: &mut BTreeMap<Container, ItemSet>,
+        edge_changes: &mut BTreeMap<Edge, ItemSet>,
     ) {
         let new_items = &edge_changes[&Edge::Inserter { id: inserter }];
 

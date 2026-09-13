@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 use crate::{DATA_STORE, item::Item};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ItemSet {
     // TODO: This is probably really slow, and really big
     items: BTreeSet<Item>,

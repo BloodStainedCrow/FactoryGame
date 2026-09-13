@@ -6,7 +6,7 @@ use crate::{
     power_grid::{PowerGridBackendID, SingleRecipeAssemblerInfo},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AssemblerBackendID(pub(super) usize);
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub struct AssemblerAdditionInfo {
     // TODO: Stats
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FullAssemblerIdentifier {
     pub recipe: Recipe,
     pub grid: PowerGridBackendID,

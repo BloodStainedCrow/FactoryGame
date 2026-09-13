@@ -14,7 +14,7 @@ mod update;
 
 pub const NO_POWER_BACKEND_ID: PowerGridBackendID = PowerGridBackendID(0);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PowerGridBackendID(usize);
 
 #[derive(Debug, Clone)]

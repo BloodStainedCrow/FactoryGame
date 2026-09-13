@@ -31,11 +31,24 @@ impl Middle {
 
         let next_index = self.belt_list.next_push_index();
 
-        let backend_id =
+        let result =
             backend.add_transport_line(backend::transport_lines::TransportLineAdditionInfo {
                 length,
                 items: ItemSet::empty(),
             });
+
+        let backend_id = match result {
+            backend::AdditionResult::Added {
+                new_id,
+                relocations,
+            } => {
+                if !relocations.is_empty() {
+                    todo!("Handle relocations");
+                }
+                new_id
+            },
+            backend::AdditionResult::Failed { info } => todo!(),
+        };
 
         let index = self.belt_list.push(TransportLineInfo {
             backend_id,
