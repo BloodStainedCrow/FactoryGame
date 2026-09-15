@@ -53,7 +53,7 @@ impl<T> Bucket<T> {
 mod test {
     use super::*;
 
-    use proptest::{prop_assert, proptest};
+    use proptest::{prop_assert_eq, prop_assert_ne, proptest};
 
     proptest! {
         #[test]
@@ -65,10 +65,10 @@ mod test {
             for i in 1..=ticks {
                 let res = bucket.advance();
 
-                if i != ticks {
-                    prop_assert!(res.count() == 0);
+                if i == ticks {
+                    prop_assert_ne!(res.count(), 0);
                 } else {
-                    prop_assert!(res.count() != 0);
+                    prop_assert_eq!(res.count(), 0);
                 }
             }
         }
@@ -83,9 +83,9 @@ mod test {
                 let res = bucket.advance();
 
                 if i < ticks {
-                    prop_assert!(res.count() == 0);
+                    prop_assert_eq!(res.count(), 0);
                 } else {
-                    prop_assert!(res.count() == 1);
+                    prop_assert_eq!(res.count(), 1);
                 }
             }
         }

@@ -34,13 +34,14 @@ struct SingleRecipeAssemblerInfo {
 pub struct PowerGridSize(usize);
 
 impl Backend {
+    #[must_use]
     pub fn get_power_grid_size(&self, id: PowerGridBackendID) -> PowerGridSize {
         // This is just an optimization. The number means nothing and should just encode the cost of merging power
         PowerGridSize(
-            self.power_grids[id.0 as usize]
+            self.power_grids[id.0]
                 .assemblers
                 .values()
-                .map(|list| list.next_push_index())
+                .map(StableVec::next_push_index)
                 .sum(),
         )
     }

@@ -35,7 +35,7 @@ impl Middle {
     pub fn try_add_pipe(
         &mut self,
         info: PipeAdditionInfo,
-        backend: &mut (),
+        _backend: &mut (),
     ) -> Result<PipeMiddleID, PipeAdditionError> {
         let PipeAdditionInfo { mut connections } = info;
 
@@ -60,15 +60,15 @@ impl Middle {
             },
             Err(None) => {
                 // TODO: Create New Grid
-                let new_fluid_system_id = ();
+                
 
-                new_fluid_system_id
+                
             },
             Err(Some(_)) => {
                 match connections
                     .iter()
                     .map(|index| self.pipe_list[index.0 as usize].fluid_system_id)
-                    .filter_map(|system_id| todo!("Get fluid") as Option<Item>)
+                    .filter_map(|_system_id| todo!("Get fluid") as Option<Item>)
                     .all_equal_value()
                 {
                     Ok(_) | Err(None) => {
@@ -82,7 +82,7 @@ impl Middle {
                 }
 
                 // Merge everyting into the largest grid, to minimize swaps
-                connections.sort_by_key(|pipe| todo!("Get fluid networks size"));
+                connections.sort_by_key(|_pipe| todo!("Get fluid networks size"));
 
                 let kept_pipe = connections
                     .pop()
@@ -131,7 +131,7 @@ impl Middle {
         }
     }
 
-    pub fn remove_pipe(&mut self, id: PipeMiddleID, backend: &mut Backend) {
+    pub fn remove_pipe(&mut self, id: PipeMiddleID, _backend: &mut Backend) {
         // Remove the removed pipe from the connected pipes' connection lists
         for i in 0..self.pipe_list[id.0 as usize].connections.len() {
             let connected = self.pipe_list[id.0 as usize].connections[i];

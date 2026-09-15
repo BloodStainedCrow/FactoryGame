@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct InserterStore {
+pub struct InserterStore {
     empty_inserters: StableVec<SingleInserterInfo>,
 
     pure_to_pure: BTreeMap<Item, BTreeMap<u16, PureOneToOneInserterStore>>,
@@ -21,7 +21,7 @@ pub(crate) struct InserterStore {
 impl InserterStore {
     pub fn add_inserter(
         &mut self,
-        kind: InserterKind,
+        kind: &InserterKind,
         info: SingleInserterInfo,
     ) -> InserterBackendID {
         match kind {
@@ -31,14 +31,14 @@ impl InserterStore {
             },
             InserterKind::OneToOneSingleItem {
                 item,
-                source,
-                dest,
-                movetime,
+                source: _,
+                dest: _,
+                movetime: _,
             } => {
-                let item_list = self.pure_to_pure.entry(item).or_default();
+                let item_list = self.pure_to_pure.entry(*item).or_default();
                 let movetime_list = item_list
                     .entry(info.movetime)
-                    .or_insert_with(|| PureOneToOneInserterStore::new(item, info.movetime));
+                    .or_insert_with(|| PureOneToOneInserterStore::new(*item, info.movetime));
 
                 let id = movetime_list.add_inserter();
 
@@ -52,13 +52,13 @@ impl InserterStore {
     pub(crate) fn get_inserter_state(
         &self,
         id: InserterBackendID,
-        kind: super::InserterKind,
+        kind: &InserterKind,
     ) -> InserterRenderState {
         match kind {
             InserterKind::OneToOneSingleItem {
                 item,
-                source,
-                dest,
+                source: _,
+                dest: _,
                 movetime,
             } => {
                 // FIXME: Check source waitlist
@@ -80,8 +80,8 @@ impl InserterStore {
         match inserter {
             InserterKind::OneToOneSingleItem {
                 item,
-                source,
-                dest,
+                source: _,
+                dest: _,
                 movetime,
             } => {
                 // FIXME: Check source waitlist
@@ -90,18 +90,18 @@ impl InserterStore {
                 // CORRECTNESS: We checked waitlist before
                 let state = self
                     .pure_to_pure
-                    .get_mut(&item)
+                    .get_mut(item)
                     .unwrap()
-                    .get_mut(&movetime)
+                    .get_mut(movetime)
                     .unwrap()
                     .remove_inserter(id, false);
 
                 match state {
-                    Either::Left(moving) => SingleInserterInfo {
+                    Either::Left(_moving) => SingleInserterInfo {
                         middle_id: todo!(),
                         movetime: *movetime,
                     },
-                    Either::Right(waiting) => SingleInserterInfo {
+                    Either::Right(_waiting) => SingleInserterInfo {
                         middle_id: todo!(),
                         movetime: *movetime,
                     },
@@ -126,7 +126,7 @@ impl InserterStore {
 
         let mut relocation = vec![];
 
-        for (old_index, value) in empty_inserters {
+        for (_old_index, value) in empty_inserters {
             let middle_id = value.middle_id;
             let new_index = self.empty_inserters.push(value);
 
@@ -138,7 +138,7 @@ impl InserterStore {
             });
         }
 
-        for (item, value) in pure_to_pure {
+        for (_item, _value) in pure_to_pure {
             todo!()
         }
 

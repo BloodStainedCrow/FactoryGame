@@ -48,11 +48,11 @@ pub(crate) struct SingleInserterInfo {
 impl Backend {
     pub fn add_inserter(
         &mut self,
-        info: InserterAdditionInfo,
+        info: &InserterAdditionInfo,
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
         self.add_inserter_internal(
             info.power_grid,
-            InserterKind::from_addition(&info),
+            InserterKind::from_addition(info),
             SingleInserterInfo {
                 middle_id: info.middle_id,
                 movetime: info.movetime,
@@ -66,9 +66,9 @@ impl Backend {
         kind: InserterKind,
         data: SingleInserterInfo,
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
-        let power_grid = &mut self.power_grids[grid.0 as usize];
+        let power_grid = &mut self.power_grids[grid.0];
 
-        let new_id = power_grid.inserters.add_inserter(kind, data);
+        let new_id = power_grid.inserters.add_inserter(&kind, data);
 
         AdditionResult::Added {
             new_id,
@@ -76,7 +76,7 @@ impl Backend {
         }
     }
     /// NOTE: This inserter needs to already not have any inserter connections
-    pub fn remove_inserter(&mut self, inserter: FullInserterIdentifier) {
+    pub fn remove_inserter(&mut self, _inserter: FullInserterIdentifier) {
         todo!()
     }
 
@@ -84,7 +84,7 @@ impl Backend {
         &mut self,
         inserter: FullInserterIdentifier,
     ) -> (SingleInserterInfo, InserterKind) {
-        let grid = &mut self.power_grids[inserter.grid.0 as usize];
+        let grid = &mut self.power_grids[inserter.grid.0];
 
         let kind = InserterKind::from_ident(inserter);
         let state = grid.inserters.remove_inserter(inserter.inserter_id, &kind);
@@ -102,11 +102,12 @@ impl Backend {
         self.add_inserter_internal(new_grid, kind, state)
     }
 
+    #[must_use]
     pub fn get_inserter_state(&self, inserter: FullInserterIdentifier) -> InserterRenderState {
-        let grid = &self.power_grids[inserter.grid.0 as usize];
+        let grid = &self.power_grids[inserter.grid.0];
 
         grid.inserters
-            .get_inserter_state(inserter.inserter_id, InserterKind::from_ident(inserter))
+            .get_inserter_state(inserter.inserter_id, &InserterKind::from_ident(inserter))
     }
 }
 
@@ -124,10 +125,11 @@ pub enum InserterKind {
 }
 
 impl InserterKind {
+    #[must_use]
     pub fn from_ident(ident: FullInserterIdentifier) -> Self {
         Self::from_data((
             ident.movetime,
-            &ident.inferred_items,
+            ident.inferred_items,
             &ident.source.into_iter().flatten().collect_vec(),
             ident.dest,
         ))
@@ -196,7 +198,7 @@ impl InserterKind {
 
                 _ => todo!(),
             },
-            Err(None) => InserterKind::EmptyInserter {},
+            Err(None) => Self::EmptyInserter {},
             Err(_) => todo!("Sushi"),
         }
     }

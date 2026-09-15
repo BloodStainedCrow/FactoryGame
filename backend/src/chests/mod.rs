@@ -42,15 +42,15 @@ impl Backend {
 
     pub(crate) fn change_chest_items(
         &mut self,
-        chest: FullChestIdentifier,
-        new_items: &ItemSet,
+        _chest: FullChestIdentifier,
+        _new_items: &ItemSet,
     ) -> AdditionResult<ChestMiddleID, ChestBackendID> {
         todo!()
     }
 
     pub(crate) fn add_chest_internal(
         &mut self,
-        items: &ItemSet,
+        _items: &ItemSet,
         state: FullChestState,
     ) -> AdditionResult<ChestMiddleID, ChestBackendID> {
         let index = self.sushi_chests.push(state.into());
@@ -70,7 +70,7 @@ impl Backend {
         data.into()
     }
 
-    pub fn remove_chest(&mut self, chest: FullChestIdentifier) -> ! {
+    pub fn remove_chest(&mut self, _chest: FullChestIdentifier) -> ! {
         todo!()
     }
 }

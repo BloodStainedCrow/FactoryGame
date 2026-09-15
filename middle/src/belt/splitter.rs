@@ -26,7 +26,7 @@ pub struct SplitterAdditionInfo {
 }
 
 impl Middle {
-    pub fn add_splitter(&mut self, info: !, backend: &mut Backend) -> SplitterMiddleID {
+    pub fn add_splitter(&mut self, _info: !, _backend: &mut Backend) -> SplitterMiddleID {
         todo!()
     }
 }

@@ -12,7 +12,7 @@ pub(crate) struct PowerGridInfo {
 }
 
 impl PowerGridInfo {
-    pub fn set_backend_id(&mut self, new_id: PowerGridBackendID) {
+    pub const fn set_backend_id(&mut self, new_id: PowerGridBackendID) {
         self.backend_id = new_id;
     }
 }

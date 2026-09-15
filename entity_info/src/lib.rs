@@ -34,9 +34,9 @@ impl EntityInfo {
     }
 
     #[must_use]
-    pub fn can_be_powered_by_a_pole(&self) -> bool {
+    pub const fn can_be_powered_by_a_pole(&self) -> bool {
         match self.kind {
-            EntityInfoKind::Assembler { ty, .. } => true,
+            EntityInfoKind::Assembler { .. } => true,
             EntityInfoKind::PowerPole { .. } => false,
             EntityInfoKind::Chest { .. } => false,
             EntityInfoKind::Inserter { .. } => true,
@@ -91,7 +91,8 @@ impl EntityDescriptor {
         }
     }
 
-    pub fn can_be_powered_by_a_pole(&self) -> bool {
+    #[must_use]
+    pub const fn can_be_powered_by_a_pole(&self) -> bool {
         // TODO: Some kinds might not want to be powered
         match self.kind {
             EntityDescriptorKind::Assembler { .. } => true,
@@ -105,6 +106,7 @@ impl EntityDescriptor {
         }
     }
 
+    #[must_use]
     pub fn overlaps(&self, other: BoundingBox) -> bool {
         bounding_box(self.ty, self.position, self.rotation, self.flipped).overlaps(other)
     }

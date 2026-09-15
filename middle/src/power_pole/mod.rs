@@ -67,14 +67,16 @@ impl Middle {
             Err(None) => {
                 log::trace!("Add new grid");
                 let next_middle = self.get_next_power_grid_id();
-                let new_grid = match backend.add_power_grid(PowerGridAdditionInfo {
+                
+
+                match backend.add_power_grid(PowerGridAdditionInfo {
                     middle_id: next_middle,
                 }) {
                     backend::AdditionResult::Added {
                         new_id,
                         relocations,
                     } => {
-                        log::trace!("Added new grid with id {:?}", new_id);
+                        log::trace!("Added new grid with id {new_id:?}");
 
                         let actual_middle = self.add_power_grid(new_id);
 
@@ -88,12 +90,10 @@ impl Middle {
 
                         actual_middle
                     },
-                    backend::AdditionResult::Failed { info } => {
+                    backend::AdditionResult::Failed { info: _ } => {
                         todo!("Do I want to handle this failure?")
                     },
-                };
-
-                new_grid
+                }
             },
             Err(Some(_)) => {
                 // Merge everyting into the largest grid, to minimize swaps
@@ -256,6 +256,7 @@ impl Middle {
         self.power_pole_list[id.0 as usize].position
     }
 
+    #[must_use]
     pub fn get_pole_power_grid(&self, id: PowerPoleMiddleID) -> PowerGridMiddleID {
         self.power_pole_list[id.0 as usize].grid_id
     }
@@ -270,11 +271,12 @@ impl Middle {
             .map(|conn| self.get_pole_pos(*conn))
     }
 
+    #[must_use]
     pub fn get_num_connected_poles(&self, id: PowerPoleMiddleID) -> usize {
         self.power_pole_list[id.0 as usize].connections.len()
     }
 
-    pub fn remove_power_pole(&mut self, id: PowerPoleMiddleID, backend: &mut Backend) {
+    pub fn remove_power_pole(&mut self, id: PowerPoleMiddleID, _backend: &mut Backend) {
         // Remove the removed pole from the connected poles' connection lists
         for i in 0..self.power_pole_list[id.0 as usize].connections.len() {
             let connected = self.power_pole_list[id.0 as usize].connections[i];
@@ -337,7 +339,7 @@ impl Middle {
                         info.power_grid_id = new_grid;
                         self.handle_assembler_relocations(relocations);
                     },
-                    backend::AdditionResult::Failed { info } => todo!(),
+                    backend::AdditionResult::Failed { info: _ } => todo!(),
                 }
             },
             EntityDescriptorKind::Inserter { id: middle_id, .. } => {
@@ -373,7 +375,7 @@ impl Middle {
                             todo!("Handle relocations")
                         }
                     },
-                    backend::AdditionResult::Failed { info } => todo!(),
+                    backend::AdditionResult::Failed { info: _ } => todo!(),
                 }
             },
             EntityDescriptorKind::SolarPanel { .. } => todo!(),

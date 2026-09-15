@@ -18,7 +18,7 @@ struct UndergroundConnectionInfo {
 // TODO: Tests
 impl PipeConnectionInfo {
     pub fn can_connect(self, other: Self) -> bool {
-        assert!(self.position != other.position);
+        assert_ne!(self.position, other.position);
 
         if other.direction.reverse() != self.direction {
             return false;
@@ -106,7 +106,7 @@ pub fn get_changes_after_adding<I: Iterator<Item = PipeConnectionInfo> + Clone>(
     });
 
     for (conn, index) in other_conns_on_the_way.clone() {
-        assert!(conn != info);
+        assert_ne!(conn, info);
         if conn.can_connect(info) {
             ret.new_connection = Some([(info, new_index), (conn, index)]);
         }
@@ -126,7 +126,7 @@ pub fn get_changes_after_adding<I: Iterator<Item = PipeConnectionInfo> + Clone>(
         });
 
         for (conn, index) in other_conns_on_the_way.clone() {
-            assert!(conn != other_conn);
+            assert_ne!(conn, other_conn);
             if conn.can_connect(other_conn) {
                 ret.break_connection = Some([(conn, index), (other_conn, other_index)]);
             }

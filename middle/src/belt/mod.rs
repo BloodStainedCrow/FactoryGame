@@ -68,8 +68,8 @@ impl Middle {
 
         let front_merge = front_merge.map(|v| v.get_id(self, SplitterEnd::Back));
         let back_merge = back_merge.map(|v| v.get_id(self, SplitterEnd::Front));
-        let left_sideload_source = left_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
-        let right_sideload_source =
+        let _left_sideload_source = left_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
+        let _right_sideload_source =
             right_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
 
         let next_index = self.belt_tile_list.next_push_index();
@@ -144,7 +144,7 @@ impl Middle {
         BeltTileMiddleID(index.try_into().expect("More than u32::MAX belt tiles"))
     }
 
-    pub fn remove_belt_tile(&mut self, id: BeltTileMiddleID, backend: &mut Backend) {
+    pub fn remove_belt_tile(&mut self, _id: BeltTileMiddleID, _backend: &mut Backend) {
         todo!()
     }
 }

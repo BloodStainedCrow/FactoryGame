@@ -27,7 +27,7 @@ pub struct FullAssemblerIdentifier {
 impl Backend {
     pub fn add_assembler(
         &mut self,
-        info: AssemblerAdditionInfo,
+        info: &AssemblerAdditionInfo,
     ) -> AdditionResult<AssemblerMiddleID, AssemblerBackendID> {
         self.add_assembler_internal(
             info.recipe,
@@ -44,7 +44,7 @@ impl Backend {
         grid: PowerGridBackendID,
         data: SingleRecipeAssemblerInfo,
     ) -> AdditionResult<AssemblerMiddleID, AssemblerBackendID> {
-        let assembler_list = &mut self.power_grids[grid.0]
+        let assembler_list = self.power_grids[grid.0]
             .assemblers
             .entry(recipe)
             .or_default();
@@ -58,7 +58,7 @@ impl Backend {
     }
 
     /// NOTE: This assembler needs to already not have any inserter connections
-    pub fn remove_assembler(&mut self, assembler: FullAssemblerIdentifier) {
+    pub fn remove_assembler(&mut self, _assembler: FullAssemblerIdentifier) {
         todo!()
     }
 
@@ -72,16 +72,14 @@ impl Backend {
             assembler_id,
         } = assembler;
 
-        let assembler_list = &mut self.power_grids[grid.0]
+        let assembler_list = self.power_grids[grid.0]
             .assemblers
             .get_mut(&recipe)
             .expect("Tried to move assembler which did not exist");
 
-        let assembler = assembler_list
+        assembler_list
             .remove(assembler_id.0)
-            .expect("Tried to move assembler which did not exist");
-
-        assembler
+            .expect("Tried to move assembler which did not exist")
     }
 
     pub fn move_assembler(
@@ -94,5 +92,5 @@ impl Backend {
         self.add_assembler_internal(assembler.recipe, new_grid, data)
     }
 
-    pub fn get_assembler_state(&self) {}
+    pub const fn get_assembler_state(&self) {}
 }

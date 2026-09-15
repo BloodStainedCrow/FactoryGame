@@ -54,7 +54,7 @@ enum PlacementRule {
 impl PlacementRule {
     fn eval(&self, floor: !) -> bool {
         match self {
-            Self::FloorTileRequired { area, tile } => {
+            Self::FloorTileRequired { .. } => {
                 // TODO:
                 true
             },
@@ -91,7 +91,7 @@ pub fn bounding_box(
 }
 
 #[must_use]
-pub fn extent(entity_id: GlobalTy, rotation: Rotation, flipped: Flipped) -> Extent {
+pub fn extent(entity_id: GlobalTy, rotation: Rotation, _flipped: Flipped) -> Extent {
     // TODO: Is flipped being unused correct?
     DATA_STORE.entities[usize::from(entity_id)]
         .size
@@ -119,11 +119,6 @@ impl TryFrom<EntityIdentifier> for GlobalTy {
                         .into(),
                 )
             })
-            .ok_or_else(|| {
-                format!(
-                    "Cannot find entity: {value:?} in {:?}",
-                    &DATA_STORE.entities
-                )
-            })
+            .ok_or_else(|| format!("Cannot find entity: {value:?} in {:?}", DATA_STORE.entities))
     }
 }

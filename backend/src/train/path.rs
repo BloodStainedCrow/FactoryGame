@@ -46,7 +46,7 @@ impl SegmentReservationList<'_> {
         self.list[index.0 as usize] == Some(train_id)
     }
 
-    fn can_be_reserved(&self, index: SegmentId) -> bool {
+    const fn can_be_reserved(&self, index: SegmentId) -> bool {
         self.list[index.0 as usize].is_none()
     }
 

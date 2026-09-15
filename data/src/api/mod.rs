@@ -138,7 +138,7 @@ impl DataStore {
 
         assert!(u16::try_from(entities.len()).is_ok());
 
-        let full_name_to_global_id: HashMap<EntityIdentifier, GlobalTy> = entities
+        let _full_name_to_global_id: HashMap<EntityIdentifier, GlobalTy> = entities
             .iter()
             .enumerate()
             .map(|(idx, e)| {

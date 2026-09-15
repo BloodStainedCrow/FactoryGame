@@ -97,7 +97,7 @@ impl Surface {
                         ty: desc.ty.try_into().expect("Belt with non BeltTy"),
                         middle_id: id,
                     },
-                    EntityDescriptorKind::Pipe { id } => todo!(),
+                    EntityDescriptorKind::Pipe { id: _ } => todo!(),
                     EntityDescriptorKind::Chest { id } => EntityInfoKind::Chest {
                         ty: desc.ty.try_into().expect("Chest with non ChestTy"),
                         middle_id: id,
@@ -260,7 +260,7 @@ impl Surface {
         let source_pos = get_input_position(ty, top_left, rotation, flipped);
         let dest_pos = get_output_position(ty, top_left, rotation, flipped);
 
-        assert!(source_pos != dest_pos);
+        assert_ne!(source_pos, dest_pos);
 
         let source_conn = self.get_source_conns_or_add_floor_conn(source_pos);
         let dest_conn = self.get_dest_conns_or_add_floor_conn(dest_pos);

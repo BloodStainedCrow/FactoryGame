@@ -52,12 +52,12 @@ impl TransportLineStore {
     }
 
     fn remove_transport_line(&mut self, ident: FullTransportLineIdentifier) -> SushiTransportLine {
-        let sushi = self
+        
+
+        self
             .sushi
             .remove(ident.id.0 as usize)
-            .expect("Tried to remove non-existant transport line");
-
-        sushi
+            .expect("Tried to remove non-existant transport line")
     }
 }
 

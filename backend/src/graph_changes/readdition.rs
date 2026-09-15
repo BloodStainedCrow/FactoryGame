@@ -13,7 +13,7 @@ use crate::{
 impl Backend {
     pub(super) fn add_all_inserters<'a>(
         &mut self,
-        inserters: impl IntoIterator<
+        _inserters: impl IntoIterator<
             Item = (
                 FullInserterIdentifier<'a>,
                 (SingleInserterInfo, InserterKind),

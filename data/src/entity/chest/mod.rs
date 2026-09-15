@@ -29,7 +29,7 @@ impl TryFrom<GlobalTy> for ChestTy {
 // TODO: Use ItemStackIndex type
 #[must_use]
 #[expect(clippy::missing_const_for_fn)]
-pub fn num_slots(chest_ty: ChestTy) -> u16 {
+pub fn num_slots(_chest_ty: ChestTy) -> u16 {
     // TODO
     10
 }

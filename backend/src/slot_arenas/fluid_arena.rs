@@ -14,7 +14,7 @@ pub struct SingleFluidSlice<'a> {
 }
 
 impl SingleFluidSlice<'_> {
-    pub fn index(
+    pub const fn index(
         &mut self,
         index: FluidIndex,
     ) -> (&mut FluidSlotType, &FluidSlotType, &mut FluidSystemID) {

@@ -27,7 +27,7 @@ impl Middle {
 
         let backend_id = backend.add_chest(backend::chests::ChestAdditionInfo {
             items: &ItemSet::empty(),
-            num_slots: num_slots,
+            num_slots,
         });
 
         match backend_id {
@@ -49,12 +49,12 @@ impl Middle {
 
                 ChestMiddleID(index.try_into().expect("More than u32::MAX chests"))
             },
-            AdditionResult::Failed { info } => todo!(),
+            AdditionResult::Failed { info: _ } => todo!(),
         }
     }
 
     /// The chest must not be connected to any inserters
-    pub fn remove_chest(&mut self, id: ChestMiddleID, backend: &mut Backend) {
+    pub fn remove_chest(&mut self, id: ChestMiddleID, _backend: &mut Backend) {
         let chest = &self.chest_list[id.0 as usize];
 
         assert!(chest.connected_inserters.is_empty());

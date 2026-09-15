@@ -40,12 +40,19 @@ pub enum AdditionResult<MiddleID, BackendID> {
 }
 
 impl Backend {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             power_grids: StableVec::new(),
             sushi_chests: StableVec::new(),
             transport_lines: TransportLineStore::new(),
         }
+    }
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

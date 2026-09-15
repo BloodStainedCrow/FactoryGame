@@ -15,10 +15,10 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct PureOneToOneInserterStore {
+pub struct PureOneToOneInserterStore {
     // TODO: This might not be kept since it can be inferred from the vec location?
     item: Item,
-    /// The inserter movetime in power_adjusted_time
+    /// The inserter movetime in `power_adjusted_time`
     // FIXME: Typing
     movetime: u16,
 
@@ -34,9 +34,9 @@ pub(crate) struct PureOneToOneInserterStore {
 #[derive(Debug, Clone, Copy)]
 struct InserterState {
     /// This is used to calculate how far the inserter has moved (implicitly)
-    /// Since the maximum inserter move time is u16::MAX we can use a u16 here
+    /// Since the maximum inserter move time is `u16::MAX` we can use a u16 here
     /// After an inserter is done moving, its information is added to the waitlist and MUST be read first from there. The info here WILL become incorrect after `movetime`
-    /// This is in power_adjusted_time
+    /// This is in `power_adjusted_time`
     time_updated: u16,
 
     state: State,
@@ -80,8 +80,8 @@ struct InserterBucketInfo {
 }
 const_assert_eq!(std::mem::size_of::<InserterBucketInfo>(), 16);
 
-pub(crate) struct InserterRemovalInfoMoving {}
-pub(crate) struct InserterRemovalInfoStatic {}
+pub struct InserterRemovalInfoMoving {}
+pub struct InserterRemovalInfoStatic {}
 
 impl PureOneToOneInserterStore {
     pub fn new(item: Item, movetime: u16) -> Self {
@@ -109,17 +109,19 @@ impl PureOneToOneInserterStore {
         id: InserterBackendID,
         token_already_removed: bool,
     ) -> Either<InserterRemovalInfoMoving, InserterRemovalInfoStatic> {
-        let inserter = self
+        let _inserter = self
             .inserters
             .remove(id.0 as usize)
             .expect("Tried to remove inserter that did not exist");
 
-        if !token_already_removed {
+        if token_already_removed {
+            Either::Right(InserterRemovalInfoStatic {})
+        } else {
             let state = self.get_state_after_checking_waitlist(id);
             match state {
                 // TODO: We should be able to calculate the bucket
                 InserterRenderState::FullAndMovingOut(_, _) => {
-                    let bucket_info = self
+                    let _bucket_info = self
                         .outgoing_buckets
                         .remove_first(|b| b.id == id)
                         .expect("Where else would it be?");
@@ -129,12 +131,10 @@ impl PureOneToOneInserterStore {
                 InserterRenderState::EmptyAndMovingBack(_) => todo!(),
                 _ => unreachable!(),
             }
-        } else {
-            Either::Right(InserterRemovalInfoStatic {})
         }
     }
 
-    pub fn update(&mut self, power_mult: PowerMult, single_item_slice: &mut SingleItemSlice) {
+    pub fn update(&mut self, power_mult: PowerMult, _single_item_slice: &mut SingleItemSlice) {
         match self.timer.advance(power_mult) {
             AdvanceResult::Tick => {},
             AdvanceResult::NoTick => {
@@ -143,11 +143,11 @@ impl PureOneToOneInserterStore {
             },
         }
 
-        for outgoing in self.outgoing_buckets.advance() {
+        for _outgoing in self.outgoing_buckets.advance() {
             // TODO: Interact with lists
         }
 
-        for incoming in self.incoming_buckets.advance() {
+        for _incoming in self.incoming_buckets.advance() {
             // TODO: Interact with lists
         }
     }

@@ -257,13 +257,10 @@ impl PosInChunk {
         let y_offs = goal_pos.y - base_pos.y;
 
         let (x_offs, y_offs): (u8, u8) = match (x_offs.try_into(), y_offs.try_into()) {
-            (Ok(x), Ok(y)) => {
-                if x < CHUNK_SIZE && y < CHUNK_SIZE {
+            (Ok(x), Ok(y))
+                if x < CHUNK_SIZE && y < CHUNK_SIZE => {
                     (x, y)
-                } else {
-                    return Err(());
-                }
-            },
+                },
             _ => return Err(()),
         };
 

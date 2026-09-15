@@ -58,9 +58,9 @@ impl FluidNetwork {
             *current -= to_move;
 
             if fulfilled {
-                debug_assert!(*current == 0);
+                debug_assert_eq!(*current, 0);
                 // FIXME: This assumes that each fluid slot can only be accessed by a single fluid network
-                debug_assert!(*token_slot == NO_TOKEN);
+                debug_assert_eq!(*token_slot, NO_TOKEN);
                 *token_slot = self_index;
                 end_index += 1;
             } else {
@@ -97,9 +97,9 @@ impl FluidNetwork {
             *current += to_move;
 
             if fulfilled {
-                debug_assert!(*current == *max);
+                debug_assert_eq!(*current, *max);
                 // FIXME: This assumes that each fluid slot can only be accessed by a single fluid network
-                debug_assert!(*token_slot == NO_TOKEN);
+                debug_assert_eq!(*token_slot, NO_TOKEN);
                 *token_slot = self_index;
                 end_index += 1;
             } else {
@@ -110,6 +110,7 @@ impl FluidNetwork {
         self.output_tokens.drain(0..end_index);
     }
 
+    #[must_use]
     pub const fn get_info(&self) -> FluidNetworkInfo {
         FluidNetworkInfo {
             current_fluid: self.current_fluid,

@@ -9,6 +9,6 @@ impl SurfaceWorld {
         pole_area: BoundingBox,
     ) -> impl Iterator<Item = EntityDescriptor> {
         self.get_entities_in_area(pole_area)
-            .filter(|e| e.can_be_powered_by_a_pole())
+            .filter(entity_info::EntityDescriptor::can_be_powered_by_a_pole)
     }
 }

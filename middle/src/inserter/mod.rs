@@ -79,7 +79,7 @@ impl Middle {
         }
 
         let backend_id =
-            match backend.add_inserter(backend::power_grid::inserter::InserterAdditionInfo {
+            match backend.add_inserter(&backend::power_grid::inserter::InserterAdditionInfo {
                 power_grid: self.power_grid_list[info.power_grid_id.0 as usize].backend_id,
                 middle_id: InserterMiddleID(next_index),
                 source: info
@@ -100,7 +100,7 @@ impl Middle {
                     }
                     new_id
                 },
-                backend::AdditionResult::Failed { info } => todo!(),
+                backend::AdditionResult::Failed { info: _ } => todo!(),
             };
 
         let index = self.inserter_list.push(InserterInfo {

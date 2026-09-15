@@ -36,21 +36,22 @@ pub enum BackendInserterConnection<'a> {
 }
 
 impl BackendInserterConnection<'_> {
-    pub fn get_list_entries(
+    pub(super) fn get_list_entries(
         conns: &[Self],
         inserter_items: &ItemSet,
     ) -> impl Iterator<Item = InserterConnection> {
         conns.iter().map(|conn| conn.get_list_entry(inserter_items))
     }
 
-    pub fn get_list_entry(&self, inserter_items: &ItemSet) -> InserterConnection {
+    #[must_use]
+    pub(super) fn get_list_entry(&self, inserter_items: &ItemSet) -> InserterConnection {
         match self {
             Self::Assembler {
                 ident:
                     FullAssemblerIdentifier {
-                        recipe,
-                        grid,
-                        assembler_id,
+                        recipe: _,
+                        grid: _,
+                        assembler_id: _,
                     },
             } => match inserter_items.is_pure() {
                 // TODO: Get the assembler slot index
@@ -63,15 +64,13 @@ impl BackendInserterConnection<'_> {
             },
             Self::Chest {
                 ident: FullChestIdentifier { items, id },
-            } => {
-                if let Ok(item) = items.is_pure() {
+            } => items
+                .is_pure()
+                .map_or(InserterConnection::SushiChest { index: id.0 }, |item| {
                     InserterConnection::PureChest { item, index: id.0 }
-                } else {
-                    InserterConnection::SushiChest { index: id.0 }
-                }
-            },
+                }),
             Self::TransportLine {
-                ident: FullTransportLineIdentifier { id, items },
+                ident: FullTransportLineIdentifier { id, items: _ },
                 belt_pos,
             } => InserterConnection::SushiBelt {
                 id: *id,

@@ -1360,7 +1360,7 @@ impl Layer {
         for (k, v) in other.sprite_commands.commands {
             match self.sprite_commands.commands.entry(k) {
                 std::collections::hash_map::Entry::Occupied(mut occupied_entry) => {
-                    let (sprite, instances) = occupied_entry.get_mut();
+                    let (_sprite, instances) = occupied_entry.get_mut();
                     instances.extend(v.1);
                 },
                 std::collections::hash_map::Entry::Vacant(vacant_entry) => {
@@ -1386,7 +1386,7 @@ impl Layer {
     pub fn draw_sprite(&mut self, sprite: &Sprite, instance: DrawInstance) {
         assert!(instance.animation_frame < sprite.texture.number_anim_frames);
 
-        if let Some((a, b)) = self.sprite_commands.commands.get_mut(&sprite.texture.id) {
+        if let Some((_a, b)) = self.sprite_commands.commands.get_mut(&sprite.texture.id) {
             b.push(Instance {
                 position: [
                     instance.position[0] * self.x_mult,
@@ -1434,7 +1434,7 @@ impl Layer {
         sprite: &Sprite,
         instance: impl IntoIterator<Item = DrawInstance>,
     ) {
-        if let Some((a, b)) = self.sprite_commands.commands.get_mut(&sprite.texture.id) {
+        if let Some((_a, b)) = self.sprite_commands.commands.get_mut(&sprite.texture.id) {
             b.extend(instance.into_iter().map(|instance| {
                 debug_assert!(instance.animation_frame < sprite.texture.number_anim_frames);
                 Instance {

@@ -339,7 +339,7 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
 #[expect(clippy::needless_pass_by_value)]
 // NOTE(BSC): This function may never be called in unit tests, since those are inherently parallel and WILL race!
 #[cfg(not(test))]
-pub unsafe fn set_data(data_store: DataStore) {
+pub unsafe fn set_data(_data_store: DataStore) {
     todo!()
 }
 

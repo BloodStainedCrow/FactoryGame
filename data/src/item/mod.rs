@@ -18,7 +18,7 @@ pub struct ItemStack {
 }
 
 #[must_use]
-pub const fn max_stack_size(item: Item) -> NonZero<ItemCountType> {
+pub const fn max_stack_size(_item: Item) -> NonZero<ItemCountType> {
     // TODO
     NonZero::new(2).expect("Hardcoded")
 }

@@ -58,7 +58,7 @@ impl Middle {
         let next_index = self.assembler_list.next_push_index();
 
         let backend_id =
-            match backend.add_assembler(backend::power_grid::assembler::AssemblerAdditionInfo {
+            match backend.add_assembler(&backend::power_grid::assembler::AssemblerAdditionInfo {
                 power_grid: self.power_grid_list[info.power_grid.0 as usize].backend_id,
                 recipe: info.recipe,
                 middle_id: AssemblerMiddleID(next_index.try_into().unwrap()),
@@ -70,7 +70,7 @@ impl Middle {
                     self.handle_assembler_relocations(relocations);
                     new_id
                 },
-                backend::AdditionResult::Failed { info } => todo!(),
+                backend::AdditionResult::Failed { info: _ } => todo!(),
             };
 
         let index = self.assembler_list.push(MiddleAssemblerInfo {
@@ -89,7 +89,7 @@ impl Middle {
         &mut self,
         id: AssemblerMiddleID,
         new_recipe: Recipe,
-        backend: &mut Backend,
+        _backend: &mut Backend,
     ) {
         // TODO: This will impact the graph
         self.assembler_list[id.0 as usize].current_recipe = new_recipe;
@@ -98,8 +98,8 @@ impl Middle {
     #[must_use]
     pub fn remove_assembler(
         &mut self,
-        id: AssemblerMiddleID,
-        backend: &mut Backend,
+        _id: AssemblerMiddleID,
+        _backend: &mut Backend,
     ) -> AssemblerRemovalInfo {
         todo!()
     }

@@ -55,7 +55,7 @@ pub struct GraphChangesResult {
 impl Backend {
     #[must_use]
     pub fn apply_graph_changes(&mut self, changes: GraphChanges<'_>) -> GraphChangesResult {
-        let inserters = self.remove_all_inserters(changes.inserter_changes);
+        let _inserters = self.remove_all_inserters(changes.inserter_changes);
         let chests = self.remove_all_chests(changes.chest_changes);
         let transport_lines = self.remove_all_transport_lines(changes.transport_line_changes);
 

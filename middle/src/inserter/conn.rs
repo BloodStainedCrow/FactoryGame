@@ -40,7 +40,7 @@ enum Container {
 impl Conn {
     fn get_container(self, middle: &Middle) -> Option<Container> {
         match self {
-            Self::Assembler { id } => None,
+            Self::Assembler { id: _ } => None,
             Self::Chest { id } => Some(Container::Chest { id }),
             Self::BeltTile { id, .. } => {
                 let id = middle.belt_tile_list[id.0 as usize].transport_line;
@@ -57,7 +57,7 @@ enum Edge {
 }
 
 impl Middle {
-    pub(crate) fn get_backend_conn(&self, conn: Conn) -> BackendInserterConnection {
+    pub(crate) fn get_backend_conn(&self, conn: Conn) -> BackendInserterConnection<'_> {
         match conn {
             Conn::Assembler { id } => BackendInserterConnection::Assembler {
                 ident: FullAssemblerIdentifier {
@@ -76,15 +76,15 @@ impl Middle {
             Conn::BeltTile { id } => {
                 let BeltTileInfo {
                     transport_line,
-                    connected_inserters,
+                    connected_inserters: _,
                     belt_pos,
                 } = &self.belt_tile_list[id.0 as usize];
 
                 let TransportLineInfo {
-                    length,
+                    length: _,
                     backend_id,
                     inferred_items,
-                    connected_tiles,
+                    connected_tiles: _,
                 } = &self.belt_list[transport_line.0 as usize];
 
                 BackendInserterConnection::TransportLine {
@@ -108,7 +108,7 @@ impl Middle {
                 get_items_produced_by_recipe(recipe)
             },
             Conn::Chest { id } => self
-                .get_item_in_container(Container::Chest { id: id })
+                .get_item_in_container(Container::Chest { id })
                 .clone(),
             Conn::BeltTile { id, .. } => self
                 .get_item_in_container(Container::TransportLine {
@@ -132,6 +132,7 @@ impl Middle {
         }
     }
 
+    #[must_use]
     pub fn get_item_in_container(&self, container: Container) -> &ItemSet {
         match container {
             Container::Chest { id } => &self.chest_list[id.0 as usize].inferred_items,
@@ -254,7 +255,7 @@ impl Middle {
                         self.chest_list[middle_id.0 as usize].inferred_items =
                             new_state.inferred_items;
                     },
-                    backend::AdditionResult::Failed { info } => unreachable!(),
+                    backend::AdditionResult::Failed { info: _ } => unreachable!(),
                 }
             }
 
@@ -274,7 +275,7 @@ impl Middle {
                         self.belt_list[middle_id.0 as usize].inferred_items =
                             new_state.inferred_items;
                     },
-                    backend::AdditionResult::Failed { info } => unreachable!(),
+                    backend::AdditionResult::Failed { info: _ } => unreachable!(),
                 }
             }
 
@@ -294,7 +295,7 @@ impl Middle {
                         self.inserter_list[middle_id.0 as usize].inferred_items =
                             new_state.inferred_items;
                     },
-                    backend::AdditionResult::Failed { info } => unreachable!(),
+                    backend::AdditionResult::Failed { info: _ } => unreachable!(),
                 }
             }
         }
@@ -302,7 +303,7 @@ impl Middle {
 
     fn apply_effect_of_new_edge_internal(
         &self,
-        source: Conn,
+        _source: Conn,
         dest: Conn,
         item_filter: &ItemSet,
         container_changes: &mut BTreeMap<Container, ItemSet>,
@@ -315,7 +316,6 @@ impl Middle {
         let current_destination_items = self.get_item_in_container(destination_container);
 
         if ItemSet::is_subset(item_filter, current_destination_items) {
-            return;
         } else {
             let mut destination_items = current_destination_items.clone();
             destination_items.union(item_filter);
@@ -391,7 +391,7 @@ impl Middle {
 
         let items_in_dest = match container_changes.get(&destination_container) {
             Some(already_changed) => already_changed,
-            None => &self.get_item_in_container(destination_container),
+            None => self.get_item_in_container(destination_container),
         };
 
         if ItemSet::is_subset(&items_in_edge, items_in_dest) {

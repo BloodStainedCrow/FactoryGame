@@ -31,6 +31,6 @@ impl TryFrom<GlobalTy> for BeltTy {
 
 /// The speed of the belt
 #[must_use]
-pub fn belt_speed(ty: BeltTy) -> ! {
+pub fn belt_speed(_ty: BeltTy) -> ! {
     todo!()
 }

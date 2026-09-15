@@ -8,7 +8,7 @@ use middle_indices::{BeltTileMiddleID, TransportLineMiddleID};
 use crate::Middle;
 
 #[derive(Debug, Clone)]
-pub(crate) struct TransportLineInfo {
+pub struct TransportLineInfo {
     pub length: BeltLenType,
     pub backend_id: TransportLineBackendID,
     pub inferred_items: ItemSet,
@@ -54,7 +54,7 @@ impl Middle {
                 }
                 new_id
             },
-            backend::AdditionResult::Failed { info } => todo!(),
+            backend::AdditionResult::Failed { info: _ } => todo!(),
         };
 
         let index = self.belt_list.push(TransportLineInfo {
@@ -76,28 +76,28 @@ impl Middle {
     pub(super) fn extent_transport_line(
         &mut self,
         belt: TransportLineMiddleID,
-        end: TransportLineEnd,
-        amount: u32,
-        backend: &mut Backend,
+        _end: TransportLineEnd,
+        _amount: u32,
+        _backend: &mut Backend,
     ) {
-        let belt = &mut self.belt_list[belt.0 as usize];
+        let _belt = &mut self.belt_list[belt.0 as usize];
 
         todo!()
     }
 
     pub(super) fn merge_transport_lines(
         &mut self,
-        front: TransportLineMiddleID,
-        back: TransportLineMiddleID,
-        backend: &mut Backend,
+        _front: TransportLineMiddleID,
+        _back: TransportLineMiddleID,
+        _backend: &mut Backend,
     ) -> TransportLineMiddleID {
         todo!()
     }
 
     pub(super) fn remove_transport_line(
         &mut self,
-        id: TransportLineMiddleID,
-        backend: &mut Backend,
+        _id: TransportLineMiddleID,
+        _backend: &mut Backend,
     ) -> TransportLineMiddleID {
         todo!()
     }
