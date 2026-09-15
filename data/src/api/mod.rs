@@ -39,6 +39,7 @@ pub(crate) struct ModData {
 }
 
 impl DataStore {
+    #[expect(clippy::too_many_lines)]
     pub fn from_mods(mods: &[ModData]) -> Self {
         let entities: Vec<_> =
             mods.iter()

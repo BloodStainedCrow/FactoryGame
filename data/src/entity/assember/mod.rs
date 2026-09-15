@@ -46,9 +46,9 @@ impl<'a> TryFrom<&'a RecipeIdentifier> for Recipe {
             .recipes
             .iter()
             .position(|recipe_info| &recipe_info.recipe_identifier == value)
-            .map(|index| Recipe(index.try_into().expect("More than u32::MAX recipies")))
-            // HACK:
-            .unwrap_or(Recipe(0)))
+            .map_or(Self(0), |index| {
+                Self(index.try_into().expect("More than u32::MAX recipies"))
+            }))
     }
 }
 

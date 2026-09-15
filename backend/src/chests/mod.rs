@@ -20,6 +20,7 @@ pub struct FullChestIdentifier<'a> {
     pub id: ChestBackendID,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct ChestAdditionInfo<'a> {
     pub items: &'a ItemSet,
     pub num_slots: ItemStackIndex,

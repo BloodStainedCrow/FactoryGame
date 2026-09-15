@@ -26,7 +26,7 @@ impl SushiSlot {
         })
     }
 
-    fn is_empty(self) -> bool {
+    const fn is_empty(self) -> bool {
         self.content.as_ref().is_none()
     }
 }

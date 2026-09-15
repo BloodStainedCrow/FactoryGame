@@ -39,5 +39,6 @@
         "editor.defaultFormatter": "rust-lang.rust-analyzer",
         "editor.formatOnSave": true
     },
-    "rust-analyzer.assist.preferSelf": true
+    "rust-analyzer.assist.preferSelf": true,
+    "rust-analyzer.check.workspace": true
 }

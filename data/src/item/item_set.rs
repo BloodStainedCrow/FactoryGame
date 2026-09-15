@@ -22,7 +22,7 @@ impl ItemSet {
     pub fn all() -> Self {
         Self {
             items: (0..DATA_STORE.items.len())
-                .map(|idx| Item(idx as u16))
+                .map(|idx| Item(idx.try_into().expect("More than u16::MAX Items")))
                 .collect(),
         }
     }
