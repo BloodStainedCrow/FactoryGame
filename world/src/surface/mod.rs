@@ -15,7 +15,6 @@ use data::{
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
-use itertools::Itertools;
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
     assembler::AssemblerAdditionInfo,
@@ -362,18 +361,16 @@ impl Surface {
                 other_connection_area.overlaps(bounding_box)
             })
             // FIXME: Manhatten is prob wrong, and using top_left is for sure wrong
-            .sorted_by_key(|e| top_left.manhattan_distance(e.position))
+            // .sorted_by_key(|e| top_left.manhattan_distance(e.position))
             .map(|e| {
                 let EntityDescriptorKind::PowerPole { id } = e.kind else {
                     unreachable!()
                 };
                 id
             })
+            .filter(|id| self.middle.get_num_connected_poles(*id) < AUTOMATIC_POLE_CONNECTION_LIMIT)
+            .take(AUTOMATIC_POLE_CONNECTION_LIMIT)
         {
-            if connected_poles.len() > AUTOMATIC_POLE_CONNECTION_LIMIT {
-                break;
-            }
-
             if connected_poles
                 .iter()
                 .all(|already| !self.middle.are_poles_connected([*already, conn]))
@@ -381,6 +378,8 @@ impl Surface {
                 // This will not form a triangle
                 connected_poles.push(conn);
             }
+
+            assert!(connected_poles.len() <= connected_poles.inline_size());
         }
 
         let connected_entities = self

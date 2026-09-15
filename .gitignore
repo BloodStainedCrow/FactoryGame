@@ -12,3 +12,4 @@ vtune-results
 profile.json.gz
 dist
 result
+profile.jsonl

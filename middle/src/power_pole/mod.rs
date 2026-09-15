@@ -270,6 +270,10 @@ impl Middle {
             .map(|conn| self.get_pole_pos(*conn))
     }
 
+    pub fn get_num_connected_poles(&self, id: PowerPoleMiddleID) -> usize {
+        self.power_pole_list[id.0 as usize].connections.len()
+    }
+
     pub fn remove_power_pole(&mut self, id: PowerPoleMiddleID, backend: &mut Backend) {
         // Remove the removed pole from the connected poles' connection lists
         for i in 0..self.power_pole_list[id.0 as usize].connections.len() {

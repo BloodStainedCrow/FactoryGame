@@ -2,14 +2,18 @@ mod graphical;
 mod old;
 mod v0;
 
-use std::u32;
+use std::{
+    cmp::Ordering::{Equal, Greater, Less},
+    u32,
+};
 
+use itertools::Itertools;
 use log::error;
 pub use v0::Blueprint;
 
 use crate::{
     GameState,
-    action::{ActionKind, ApplyActionError},
+    action::{self, ActionKind, ApplyActionError},
     blueprint::string::{BlueprintString, BlueprintStringCorrupt, RawBlueprintStringData},
 };
 
@@ -65,7 +69,25 @@ impl TryFrom<&BlueprintString> for CurrentBlueprint {
 
 impl CurrentBlueprint {
     pub fn get_actions(&self) -> impl Iterator<Item = &ActionKind> {
-        self.actions.iter()
+        self.actions.iter().sorted_unstable_by(|a, b| match (a, b) {
+            (
+                ActionKind::PlaceBuilding {
+                    building_info: a, ..
+                },
+                ActionKind::PlaceBuilding {
+                    building_info: b, ..
+                },
+            ) => match (&a.kind, &b.kind) {
+                (action::BuildingKind::PowerPole { .. }, _) => Less,
+                (_, action::BuildingKind::PowerPole { .. }) => Greater,
+                (action::BuildingKind::Inserter { .. }, _) => Greater,
+                (_, action::BuildingKind::Inserter { .. }) => Less,
+                (_, _) => Equal,
+            },
+            (_, ActionKind::PlaceBuilding { .. }) => Greater,
+            (ActionKind::PlaceBuilding { .. }, _) => Less,
+            (_, _) => Equal,
+        })
     }
 
     pub fn apply_to(&self, state: &mut GameState) -> Result<(), ApplyActionError> {
