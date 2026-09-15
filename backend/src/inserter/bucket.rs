@@ -16,24 +16,29 @@ impl<T> Bucket<T> {
     }
 
     pub fn add(&mut self, value: T) {
-        *self.sizes.back_mut().unwrap() += 1;
+        *self.sizes.back_mut().expect("Timer was 0") += 1;
         self.values.push_back(value);
     }
 
     pub fn remove_first(&mut self, filter: impl Fn(&T) -> bool) -> Option<T> {
-        let pos = self.values.iter().position(filter)?;
+        let pos: u32 = self
+            .values
+            .iter()
+            .position(filter)?
+            .try_into()
+            .expect("More than u32::MAX things in bucket");
 
         // Adjust sizes
         // TODO: TEST THIS
         let mut current = 0;
         for sizes in &mut self.sizes {
             current += *sizes;
-            if current < pos as u32 {
+            if current < pos {
                 *sizes -= 1;
             }
         }
 
-        Some(self.values.remove(pos).unwrap())
+        Some(self.values.remove(pos as usize).expect("Checked before"))
     }
 
     pub fn advance(&mut self) -> impl Iterator<Item = T> {

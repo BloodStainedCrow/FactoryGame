@@ -28,8 +28,8 @@ pub struct ChestAdditionInfo<'a> {
 
 #[derive(Debug)]
 pub(crate) struct FullChestState {
-    pub slots: Vec<SushiSlot>,
-    pub stack_size_override: Option<NonZero<ItemCountType>>,
+    slots: Vec<SushiSlot>,
+    stack_size_override: Option<NonZero<ItemCountType>>,
 }
 
 impl Backend {
@@ -40,6 +40,7 @@ impl Backend {
         self.add_chest_internal(info.items, SushiChest::new(info.num_slots).into())
     }
 
+    #[expect(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub(crate) fn change_chest_items(
         &mut self,
         _chest: FullChestIdentifier,

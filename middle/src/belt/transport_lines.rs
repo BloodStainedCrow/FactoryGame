@@ -39,7 +39,7 @@ impl Middle {
         let next_index = self.belt_list.next_push_index();
 
         let result =
-            backend.add_transport_line(backend::transport_lines::TransportLineAdditionInfo {
+            backend.add_transport_line(&backend::transport_lines::TransportLineAdditionInfo {
                 length,
                 items: ItemSet::empty(),
             });

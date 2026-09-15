@@ -122,6 +122,8 @@ impl FluidNetwork {
         self.input_tokens.push(index);
     }
 
+    /// # Errors
+    /// If the token was not found in the network (It must be in the waitlist)
     pub fn try_remove_input_token(&mut self, index: FluidIndex) -> Result<FluidIndex, ()> {
         let position = self.input_tokens.iter().position(|v| *v == index);
 
@@ -138,6 +140,8 @@ impl FluidNetwork {
         self.output_tokens.push(index);
     }
 
+    /// # Errors
+    /// If the token was not found in the network (It must be in the waitlist)
     pub fn try_remove_output_token(&mut self, index: FluidIndex) -> Result<FluidIndex, ()> {
         let position = self.output_tokens.iter().position(|v| *v == index);
 

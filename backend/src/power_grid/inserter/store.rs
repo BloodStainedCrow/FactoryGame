@@ -91,9 +91,9 @@ impl InserterStore {
                 let state = self
                     .pure_to_pure
                     .get_mut(item)
-                    .unwrap()
+                    .expect("Tried to remove inserter with item that did not exist")
                     .get_mut(movetime)
-                    .unwrap()
+                    .expect("Tried to remove inserter with movetime that did not exist")
                     .remove_inserter(id, false);
 
                 match state {

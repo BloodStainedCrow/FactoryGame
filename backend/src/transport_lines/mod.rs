@@ -37,7 +37,7 @@ impl TransportLineStore {
         }
     }
 
-    fn add_transport_line(&mut self, info: TransportLineAdditionInfo) -> TransportLineBackendID {
+    fn add_transport_line(&mut self, info: &TransportLineAdditionInfo) -> TransportLineBackendID {
         self.add_transport_line_internal(SushiTransportLine::new(info.length))
     }
 
@@ -52,10 +52,7 @@ impl TransportLineStore {
     }
 
     fn remove_transport_line(&mut self, ident: FullTransportLineIdentifier) -> SushiTransportLine {
-        
-
-        self
-            .sushi
+        self.sushi
             .remove(ident.id.0 as usize)
             .expect("Tried to remove non-existant transport line")
     }
@@ -64,7 +61,7 @@ impl TransportLineStore {
 impl Backend {
     pub fn add_transport_line(
         &mut self,
-        info: TransportLineAdditionInfo,
+        info: &TransportLineAdditionInfo,
     ) -> AdditionResult<TransportLineMiddleID, TransportLineBackendID> {
         let id = self.transport_lines.add_transport_line(info);
 

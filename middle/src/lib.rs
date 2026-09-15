@@ -44,7 +44,7 @@ impl Middle {
         let AdditionResult::Added {
             new_id,
             relocations,
-        } = backend.add_power_grid(PowerGridAdditionInfo {
+        } = backend.add_power_grid(&PowerGridAdditionInfo {
             middle_id: UNATTACHED_POWER_GRID_ID,
         })
         else {

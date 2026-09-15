@@ -11,6 +11,7 @@ use crate::{
 };
 
 impl Backend {
+    #[expect(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub(super) fn add_all_inserters<'a>(
         &mut self,
         _inserters: impl IntoIterator<

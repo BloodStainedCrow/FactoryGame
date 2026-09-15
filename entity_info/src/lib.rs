@@ -33,14 +33,14 @@ impl EntityInfo {
         }
     }
 
+    // TODO: This is redundant
     #[must_use]
     pub const fn can_be_powered_by_a_pole(&self) -> bool {
         match self.kind {
-            EntityInfoKind::Assembler { .. } => true,
-            EntityInfoKind::PowerPole { .. } => false,
-            EntityInfoKind::Chest { .. } => false,
-            EntityInfoKind::Inserter { .. } => true,
-            EntityInfoKind::Belt { .. } => false,
+            EntityInfoKind::PowerPole { .. }
+            | EntityInfoKind::Chest { .. }
+            | EntityInfoKind::Belt { .. } => false,
+            EntityInfoKind::Assembler { .. } | EntityInfoKind::Inserter { .. } => true,
         }
     }
 }
@@ -95,14 +95,13 @@ impl EntityDescriptor {
     pub const fn can_be_powered_by_a_pole(&self) -> bool {
         // TODO: Some kinds might not want to be powered
         match self.kind {
-            EntityDescriptorKind::Assembler { .. } => true,
-            EntityDescriptorKind::Pipe { .. } => false,
-            EntityDescriptorKind::Inserter { .. } => true,
-            EntityDescriptorKind::Belt { .. } => false,
-            EntityDescriptorKind::PowerPole { .. } => false,
-            EntityDescriptorKind::SolarPanel { .. } => true,
-            EntityDescriptorKind::Chest { .. } => false,
-            EntityDescriptorKind::Inserter { .. } => true,
+            EntityDescriptorKind::Pipe { .. }
+            | EntityDescriptorKind::Belt { .. }
+            | EntityDescriptorKind::PowerPole { .. }
+            | EntityDescriptorKind::Chest { .. } => false,
+            EntityDescriptorKind::Assembler { .. }
+            | EntityDescriptorKind::Inserter { .. }
+            | EntityDescriptorKind::SolarPanel { .. } => true,
         }
     }
 

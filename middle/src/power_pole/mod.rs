@@ -67,9 +67,8 @@ impl Middle {
             Err(None) => {
                 log::trace!("Add new grid");
                 let next_middle = self.get_next_power_grid_id();
-                
 
-                match backend.add_power_grid(PowerGridAdditionInfo {
+                match backend.add_power_grid(&PowerGridAdditionInfo {
                     middle_id: next_middle,
                 }) {
                     backend::AdditionResult::Added {

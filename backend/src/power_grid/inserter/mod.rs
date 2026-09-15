@@ -52,7 +52,7 @@ impl Backend {
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
         self.add_inserter_internal(
             info.power_grid,
-            InserterKind::from_addition(info),
+            &InserterKind::from_addition(info),
             SingleInserterInfo {
                 middle_id: info.middle_id,
                 movetime: info.movetime,
@@ -63,12 +63,12 @@ impl Backend {
     pub(crate) fn add_inserter_internal(
         &mut self,
         grid: PowerGridBackendID,
-        kind: InserterKind,
+        kind: &InserterKind,
         data: SingleInserterInfo,
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
         let power_grid = &mut self.power_grids[grid.0];
 
-        let new_id = power_grid.inserters.add_inserter(&kind, data);
+        let new_id = power_grid.inserters.add_inserter(kind, data);
 
         AdditionResult::Added {
             new_id,
@@ -99,7 +99,7 @@ impl Backend {
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
         let (state, kind) = self.remove_inserter_internal(inserter);
 
-        self.add_inserter_internal(new_grid, kind, state)
+        self.add_inserter_internal(new_grid, &kind, state)
     }
 
     #[must_use]

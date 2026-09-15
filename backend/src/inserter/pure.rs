@@ -97,6 +97,7 @@ impl PureOneToOneInserterStore {
 
     pub fn add_inserter(&mut self) -> InserterBackendID {
         let index = self.inserters.push(InserterState {
+            #[expect(clippy::cast_possible_truncation)]
             time_updated: self.timer.0 as u16,
             state: Incoming,
         });
@@ -159,6 +160,7 @@ impl PureOneToOneInserterStore {
     ) -> InserterRenderState {
         let state = self.inserters[inserter.0 as usize];
 
+        #[expect(clippy::cast_possible_truncation)]
         (state, self.timer.0 as u16, self.movetime).into()
     }
 }

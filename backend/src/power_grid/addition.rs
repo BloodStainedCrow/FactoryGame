@@ -14,14 +14,14 @@ pub struct PowerGridAdditionInfo {
 impl Backend {
     pub fn add_power_grid(
         &mut self,
-        info: PowerGridAdditionInfo,
+        info: &PowerGridAdditionInfo,
     ) -> AdditionResult<PowerGridMiddleID, PowerGridBackendID> {
         let PowerGridAdditionInfo { middle_id } = info;
 
         let next_id = self.power_grids.next_push_index();
 
         self.power_grids.push(PowerGrid {
-            middle_id,
+            middle_id: *middle_id,
             assemblers: BTreeMap::new(),
             inserters: InserterStore::default(),
         });
