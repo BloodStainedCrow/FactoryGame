@@ -20,14 +20,14 @@ pub struct ChestAdditionInfo {
 }
 
 impl Middle {
-    pub fn add_chest(&mut self, info: ChestAdditionInfo, backend: &mut Backend) -> ChestMiddleID {
+    pub fn add_chest(&mut self, info: &ChestAdditionInfo, backend: &mut Backend) -> ChestMiddleID {
         let ChestAdditionInfo { num_slots } = info;
 
         let index = self.chest_list.next_push_index();
 
         let backend_id = backend.add_chest(backend::chests::ChestAdditionInfo {
             items: &ItemSet::empty(),
-            num_slots,
+            num_slots: *num_slots,
         });
 
         match backend_id {

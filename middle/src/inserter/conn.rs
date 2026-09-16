@@ -85,7 +85,7 @@ impl Middle {
                     backend_id,
                     inferred_items,
                     connected_tiles: _,
-                } = &self.belt_list[transport_line.0 as usize];
+                } = &self.transport_line_list[transport_line.0 as usize];
 
                 BackendInserterConnection::TransportLine {
                     ident: FullTransportLineIdentifier {
@@ -107,9 +107,7 @@ impl Middle {
 
                 get_items_produced_by_recipe(recipe)
             },
-            Conn::Chest { id } => self
-                .get_item_in_container(Container::Chest { id })
-                .clone(),
+            Conn::Chest { id } => self.get_item_in_container(Container::Chest { id }).clone(),
             Conn::BeltTile { id, .. } => self
                 .get_item_in_container(Container::TransportLine {
                     id: self.belt_tile_list[id.0 as usize].transport_line,
@@ -127,19 +125,21 @@ impl Middle {
 
                 get_items_consumed_by_recipe(recipe)
             },
-            Conn::Chest { .. } => ItemSet::all(),
-            Conn::BeltTile { .. } => ItemSet::all(),
+            Conn::Chest { .. } | Conn::BeltTile { .. } => ItemSet::all(),
         }
     }
 
     #[must_use]
-    pub fn get_item_in_container(&self, container: Container) -> &ItemSet {
+    fn get_item_in_container(&self, container: Container) -> &ItemSet {
         match container {
             Container::Chest { id } => &self.chest_list[id.0 as usize].inferred_items,
-            Container::TransportLine { id } => &self.belt_list[id.0 as usize].inferred_items,
+            Container::TransportLine { id } => {
+                &self.transport_line_list[id.0 as usize].inferred_items
+            },
         }
     }
 
+    #[expect(clippy::too_many_lines)]
     pub(super) fn apply_effect_of_new_edge(
         &mut self,
         source: Conn,
@@ -218,7 +218,7 @@ impl Middle {
                     _ => None,
                 })
                 .map(|(tl_id, new_items)| {
-                    let tl = &self.belt_list[tl_id.0 as usize];
+                    let tl = &self.transport_line_list[tl_id.0 as usize];
 
                     (
                         FullTransportLineIdentifier {
@@ -271,8 +271,8 @@ impl Middle {
 
                         let middle_id = new_state.middle_id;
 
-                        self.belt_list[middle_id.0 as usize].backend_id = new_id;
-                        self.belt_list[middle_id.0 as usize].inferred_items =
+                        self.transport_line_list[middle_id.0 as usize].backend_id = new_id;
+                        self.transport_line_list[middle_id.0 as usize].inferred_items =
                             new_state.inferred_items;
                     },
                     backend::AdditionResult::Failed { info: _ } => unreachable!(),
@@ -339,7 +339,7 @@ impl Middle {
                 Either::Left(self.chest_list[id.0 as usize].connected_inserters.iter())
             },
             Container::TransportLine { id } => Either::Right(
-                self.belt_list[id.0 as usize]
+                self.transport_line_list[id.0 as usize]
                     .connected_tiles
                     .iter()
                     .flat_map(|tile| &self.belt_tile_list[tile.0 as usize].connected_inserters),
@@ -374,11 +374,10 @@ impl Middle {
         placeable_restriction.intersection(new_items);
         let items_arriving_via_edge = placeable_restriction;
 
-        let items_in_edge = match edge_changes.get(&Edge::Inserter { id: inserter }) {
-            Some(already_changed) => already_changed,
-            None => todo!(),
-        }
-        .clone();
+        let items_in_edge = edge_changes
+            .get(&Edge::Inserter { id: inserter })
+            .unwrap_or_else(|| todo!("Calculate the items in this edge"))
+            .clone();
 
         if items_in_edge == items_arriving_via_edge {
             return;
@@ -389,10 +388,10 @@ impl Middle {
             items_arriving_via_edge.clone(),
         );
 
-        let items_in_dest = match container_changes.get(&destination_container) {
-            Some(already_changed) => already_changed,
-            None => self.get_item_in_container(destination_container),
-        };
+        let items_in_dest = container_changes.get(&destination_container).map_or_else(
+            || self.get_item_in_container(destination_container),
+            |already_changed| already_changed,
+        );
 
         if ItemSet::is_subset(&items_in_edge, items_in_dest) {
             return;

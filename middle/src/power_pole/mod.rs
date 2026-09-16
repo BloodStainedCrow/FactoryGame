@@ -30,7 +30,7 @@ pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityDescriptor>> {
 
 impl Middle {
     // TODO: All additional info
-    #[expect(clippy::let_unit_value)]
+    #[expect(clippy::too_many_lines)]
     #[must_use]
     pub fn add_power_pole(
         &mut self,
@@ -109,8 +109,7 @@ impl Middle {
 
                 log::trace!("Merge grids");
                 for &connected_pole in &connections {
-                    let removed =
-                        self.power_pole_list[connected_pole.0.try_into().unwrap()].grid_id;
+                    let removed = self.power_pole_list[connected_pole.0 as usize].grid_id;
 
                     if removed == kept {
                         continue;
@@ -173,7 +172,9 @@ impl Middle {
                     // Add other connection direction
                     self.power_pole_list[connected_pole.0 as usize]
                         .connections
-                        .push(PowerPoleMiddleID(index.try_into().unwrap()));
+                        .push(PowerPoleMiddleID(
+                            index.try_into().expect("More than u32::MAX power poles"),
+                        ));
                 }
 
                 kept
@@ -197,8 +198,7 @@ impl Middle {
             assert!(
                 self.power_pole_list.iter().all(|(_, pole)| {
                     pole.connections.iter().all(|connected_pole| {
-                        self.power_pole_list[connected_pole.0.try_into().unwrap()].grid_id
-                            == pole.grid_id
+                        self.power_pole_list[connected_pole.0 as usize].grid_id == pole.grid_id
                     })
                 }),
                 "A pole does not have the same ID as a neighbor???"
@@ -207,9 +207,11 @@ impl Middle {
             assert!(
                 self.power_pole_list.iter().all(|(idx, pole)| {
                     pole.connections.iter().all(|connected_pole| {
-                        self.power_pole_list[connected_pole.0.try_into().unwrap()]
+                        self.power_pole_list[connected_pole.0 as usize]
                             .connections
-                            .contains(&PowerPoleMiddleID(idx.try_into().unwrap()))
+                            .contains(&PowerPoleMiddleID(
+                                idx.try_into().expect("More than u32::MAX power poles"),
+                            ))
                     })
                 }),
                 "Missing bi-directional connection"
@@ -378,10 +380,10 @@ impl Middle {
                 }
             },
             EntityDescriptorKind::SolarPanel { .. } => todo!(),
-            EntityDescriptorKind::PowerPole { .. } => unreachable!(),
-            EntityDescriptorKind::Chest { .. } => unreachable!(),
-            EntityDescriptorKind::Belt { .. } => unreachable!(),
-            EntityDescriptorKind::Pipe { .. } => unreachable!(),
+            EntityDescriptorKind::PowerPole { .. }
+            | EntityDescriptorKind::Chest { .. }
+            | EntityDescriptorKind::Belt { .. }
+            | EntityDescriptorKind::Pipe { .. } => unreachable!(),
         }
     }
 }

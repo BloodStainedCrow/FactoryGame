@@ -221,7 +221,7 @@ impl Surface {
         // let connected_inserters: Vec<!> = todo!();
 
         let middle_chest_id = self.middle.add_chest(
-            ChestAdditionInfo {
+            &ChestAdditionInfo {
                 num_slots: num_slots(ty),
             },
             &mut self.backend,
@@ -305,7 +305,7 @@ impl Surface {
         // Placement is allowed. Do the placing
 
         let middle_belt_tile_id = self.middle.add_belt_tile(
-            BeltTileAdditionInfo {
+            &BeltTileAdditionInfo {
                 length: 4,
                 // TODO:
                 front_merge: None,

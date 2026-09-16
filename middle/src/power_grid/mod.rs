@@ -21,13 +21,13 @@ impl Middle {
     pub(crate) fn add_power_grid(&mut self, backend_id: PowerGridBackendID) -> PowerGridMiddleID {
         let id = self.power_grid_list.push(PowerGridInfo { backend_id });
 
-        PowerGridMiddleID(id.try_into().unwrap())
+        PowerGridMiddleID(id.try_into().expect("More than u32::MAX power grids"))
     }
 
-    pub(crate) fn get_next_power_grid_id(&mut self) -> PowerGridMiddleID {
+    pub(crate) fn get_next_power_grid_id(&self) -> PowerGridMiddleID {
         let id = self.power_grid_list.next_push_index();
 
-        PowerGridMiddleID(id.try_into().unwrap())
+        PowerGridMiddleID(id.try_into().expect("More than u32::MAX power grids"))
     }
 
     pub(crate) fn get_power_grid_size(
@@ -50,6 +50,8 @@ impl Middle {
         let res = backend.merge_power_grids(kept_back, removed_back);
 
         assert_eq!(kept_back, res.kept_id);
+
+        self.power_grid_list.remove(removed.0 as usize);
 
         res
     }

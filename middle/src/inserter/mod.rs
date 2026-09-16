@@ -115,7 +115,7 @@ impl Middle {
                 .chain(iter::repeat(None))
                 .take(MAX_CONN_COUNT)
                 .collect_array()
-                .unwrap(),
+                .expect("Take ensures len"),
             dest: info.dest,
             inferred_items: items,
 

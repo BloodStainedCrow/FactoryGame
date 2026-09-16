@@ -23,6 +23,9 @@ pub struct FluidNetworkInfo {
     max_fluid: FluidNetworkStorageType,
 }
 
+#[derive(Debug)]
+pub struct FluidTokenNotFound;
+
 impl FluidNetwork {
     // TODO: Can I think of a scheme which avoids a early return update for idle FluidNetworks?
     pub fn update<'a, 'b: 'a>(
@@ -124,7 +127,10 @@ impl FluidNetwork {
 
     /// # Errors
     /// If the token was not found in the network (It must be in the waitlist)
-    pub fn try_remove_input_token(&mut self, index: FluidIndex) -> Result<FluidIndex, ()> {
+    pub fn try_remove_input_token(
+        &mut self,
+        index: FluidIndex,
+    ) -> Result<FluidIndex, FluidTokenNotFound> {
         let position = self.input_tokens.iter().position(|v| *v == index);
 
         if let Some(position) = position {
@@ -132,7 +138,7 @@ impl FluidNetwork {
             // Doing so would be better for performance, but might break the round robin strategy. But only when the player does actively change the factory, so that might be fine
             Ok(self.input_tokens.remove(position))
         } else {
-            Err(())
+            Err(FluidTokenNotFound)
         }
     }
 
@@ -142,7 +148,10 @@ impl FluidNetwork {
 
     /// # Errors
     /// If the token was not found in the network (It must be in the waitlist)
-    pub fn try_remove_output_token(&mut self, index: FluidIndex) -> Result<FluidIndex, ()> {
+    pub fn try_remove_output_token(
+        &mut self,
+        index: FluidIndex,
+    ) -> Result<FluidIndex, FluidTokenNotFound> {
         let position = self.output_tokens.iter().position(|v| *v == index);
 
         if let Some(position) = position {
@@ -150,7 +159,7 @@ impl FluidNetwork {
             // Doing so would be better for performance, but might break the round robin strategy. But only when the player does actively change the factory, so that might be fine
             Ok(self.output_tokens.remove(position))
         } else {
-            Err(())
+            Err(FluidTokenNotFound)
         }
     }
 }

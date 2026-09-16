@@ -54,7 +54,7 @@ pub(crate) struct BeltTileInfo {
 impl Middle {
     pub fn add_belt_tile(
         &mut self,
-        info: BeltTileAdditionInfo,
+        info: &BeltTileAdditionInfo,
         backend: &mut Backend,
     ) -> BeltTileMiddleID {
         let BeltTileAdditionInfo {
@@ -68,7 +68,8 @@ impl Middle {
 
         let front_merge = front_merge.map(|v| v.get_id(self, SplitterEnd::Back));
         let back_merge = back_merge.map(|v| v.get_id(self, SplitterEnd::Front));
-        let _left_sideload_source = left_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
+        let _left_sideload_source =
+            left_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
         let _right_sideload_source =
             right_sideload_source.map(|v| v.get_id(self, SplitterEnd::Front));
 
@@ -80,7 +81,12 @@ impl Middle {
 
                 let old_length = self.get_transport_line_length(transport_line);
 
-                self.extent_transport_line(transport_line, TransportLineEnd::Back, length, backend);
+                self.extent_transport_line(
+                    transport_line,
+                    TransportLineEnd::Back,
+                    *length,
+                    backend,
+                );
 
                 Some((transport_line, old_length))
             },
@@ -96,7 +102,7 @@ impl Middle {
                     self.extent_transport_line(
                         transport_line,
                         TransportLineEnd::Front,
-                        length,
+                        *length,
                         backend,
                     );
 
@@ -112,12 +118,8 @@ impl Middle {
                 },
             };
 
-        let (final_transport_line, belt_pos) = match transport_line {
-            Some(transport_line) => {
-                // We already added us to something
-                transport_line
-            },
-            None => (
+        let (final_transport_line, belt_pos) = transport_line.unwrap_or_else(|| {
+            (
                 self.add_transport_line(
                     TransportLineAdditionInfo {
                         tiles: vec![BeltTileMiddleID(
@@ -125,13 +127,13 @@ impl Middle {
                                 .try_into()
                                 .expect("More than u32::MAX belt tiles"),
                         )],
-                        length,
+                        length: *length,
                     },
                     backend,
                 ),
                 0,
-            ),
-        };
+            )
+        });
 
         let index = self.belt_tile_list.push(BeltTileInfo {
             transport_line: final_transport_line,

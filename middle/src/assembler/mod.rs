@@ -61,7 +61,11 @@ impl Middle {
             match backend.add_assembler(&backend::power_grid::assembler::AssemblerAdditionInfo {
                 power_grid: self.power_grid_list[info.power_grid.0 as usize].backend_id,
                 recipe: info.recipe,
-                middle_id: AssemblerMiddleID(next_index.try_into().unwrap()),
+                middle_id: AssemblerMiddleID(
+                    next_index
+                        .try_into()
+                        .expect("More than u32::MAX assemblers"),
+                ),
             }) {
                 backend::AdditionResult::Added {
                     new_id,
@@ -77,7 +81,7 @@ impl Middle {
             current_recipe: info.recipe,
             power_grid_id: info.power_grid,
             backend_id,
-            connected_inserters: Default::default(),
+            connected_inserters: Vec::default(),
         });
 
         assert_eq!(next_index, index);

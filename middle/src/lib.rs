@@ -23,6 +23,7 @@ pub mod pipe;
 pub mod power_grid;
 pub mod power_pole;
 
+#[expect(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
 pub struct Middle {
     assembler_list: StableVec<MiddleAssemblerInfo>,
@@ -32,7 +33,7 @@ pub struct Middle {
     inserter_list: StableVec<InserterInfo>,
     chest_list: StableVec<ChestInfo>,
     belt_tile_list: StableVec<BeltTileInfo>,
-    belt_list: StableVec<TransportLineInfo>,
+    transport_line_list: StableVec<TransportLineInfo>,
     splitter_list: StableVec<SplitterInfo>,
 }
 
@@ -62,7 +63,7 @@ impl Middle {
             inserter_list: vec![].into(),
             chest_list: vec![].into(),
             belt_tile_list: vec![].into(),
-            belt_list: vec![].into(),
+            transport_line_list: vec![].into(),
             splitter_list: vec![].into(),
         }
     }

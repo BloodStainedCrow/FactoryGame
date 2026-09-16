@@ -36,7 +36,7 @@ impl Middle {
     ) -> TransportLineMiddleID {
         let TransportLineAdditionInfo { tiles, length } = info;
 
-        let next_index = self.belt_list.next_push_index();
+        let next_index = self.transport_line_list.next_push_index();
 
         let result =
             backend.add_transport_line(&backend::transport_lines::TransportLineAdditionInfo {
@@ -57,7 +57,7 @@ impl Middle {
             backend::AdditionResult::Failed { info: _ } => todo!(),
         };
 
-        let index = self.belt_list.push(TransportLineInfo {
+        let index = self.transport_line_list.push(TransportLineInfo {
             length,
             connected_tiles: tiles,
             backend_id,
@@ -70,21 +70,23 @@ impl Middle {
     }
 
     pub(super) fn get_transport_line_length(&self, id: TransportLineMiddleID) -> BeltLenType {
-        self.belt_list[id.0 as usize].length
+        self.transport_line_list[id.0 as usize].length
     }
 
+    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn extent_transport_line(
         &mut self,
-        belt: TransportLineMiddleID,
+        _belt: TransportLineMiddleID,
         _end: TransportLineEnd,
         _amount: u32,
         _backend: &mut Backend,
     ) {
-        let _belt = &mut self.belt_list[belt.0 as usize];
+        // let _belt = &mut self.belt_list[belt.0 as usize];
 
         todo!()
     }
 
+    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn merge_transport_lines(
         &mut self,
         _front: TransportLineMiddleID,
@@ -94,6 +96,7 @@ impl Middle {
         todo!()
     }
 
+    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn remove_transport_line(
         &mut self,
         _id: TransportLineMiddleID,

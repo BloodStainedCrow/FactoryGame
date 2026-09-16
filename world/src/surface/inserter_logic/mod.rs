@@ -14,7 +14,7 @@ impl Surface {
                 Entry::Vacant(vacant_entry) => {
                     let floor_chest_id = self
                         .middle
-                        .add_chest(ChestAdditionInfo { num_slots: 1 }, &mut self.backend);
+                        .add_chest(&ChestAdditionInfo { num_slots: 1 }, &mut self.backend);
 
                     vacant_entry.insert(floor_chest_id);
 
@@ -36,7 +36,7 @@ impl Surface {
                 Entry::Vacant(vacant_entry) => {
                     let floor_chest_id = self
                         .middle
-                        .add_chest(ChestAdditionInfo { num_slots: 1 }, &mut self.backend);
+                        .add_chest(&ChestAdditionInfo { num_slots: 1 }, &mut self.backend);
 
                     vacant_entry.insert(floor_chest_id);
 
