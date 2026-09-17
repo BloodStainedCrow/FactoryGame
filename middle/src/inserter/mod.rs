@@ -10,7 +10,7 @@ use middle_indices::{InserterMiddleID, PowerGridMiddleID};
 
 pub mod conn;
 
-use crate::{Middle, inserter::conn::Conn};
+use crate::{Middle, assembler::InserterTransfer, inserter::conn::Conn};
 
 pub const MAX_CONN_COUNT: usize = 2;
 static_assertions::const_assert!(std::mem::size_of::<Option<Conn>>() <= 8);
@@ -27,7 +27,7 @@ pub(crate) struct InserterInfo {
     pub(crate) inferred_items: ItemSet,
     pub(crate) movetime: u16,
 
-    pub(crate) user_filter: (),
+    pub(crate) user_filter: ItemSet,
 }
 
 #[derive(Debug)]
@@ -43,7 +43,7 @@ pub struct InserterAdditionInfo {
 impl Middle {
     pub fn add_inserter(
         &mut self,
-        info: &InserterAdditionInfo,
+        info: InserterAdditionInfo,
         backend: &mut Backend,
     ) -> InserterMiddleID {
         let next_index = self
@@ -124,7 +124,7 @@ impl Middle {
 
             movetime: info.movetime,
 
-            user_filter: (),
+            user_filter: info.item_filter,
         });
 
         assert_eq!(next_index, index as u32);
@@ -155,5 +155,14 @@ impl Middle {
 
         // TODO: We currently do not apply the effect of this removed edge. This will overestimate the amount of items everywhere which is safe
         //       Just bad for performance
+    }
+
+    pub(crate) fn handle_inserter_transfer(
+        &mut self,
+        transfers: impl IntoIterator<Item = InserterTransfer>,
+    ) {
+        for transfer in transfers {
+            todo!()
+        }
     }
 }

@@ -67,6 +67,8 @@ impl Middle {
         info: ChestRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
         backend: &mut Backend,
     ) {
+        self.handle_inserter_transfer(info.inserter_changes);
+
         let chest = self
             .chest_list
             .remove(info.id.0 as usize)
@@ -76,9 +78,5 @@ impl Middle {
             items: &chest.inferred_items,
             id: chest.backend_id,
         });
-
-        for transfer in info.inserter_changes {
-            todo!("Move inserter")
-        }
     }
 }

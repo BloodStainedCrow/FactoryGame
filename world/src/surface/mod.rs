@@ -275,7 +275,7 @@ impl Surface {
         let dest_conn = self.get_dest_conns_or_add_floor_conn(dest_pos);
 
         let middle_chest_id = self.middle.add_inserter(
-            &InserterAdditionInfo {
+            InserterAdditionInfo {
                 power_grid_id,
                 sources: source_conn,
                 dest: dest_conn,

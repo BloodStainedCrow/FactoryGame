@@ -9,7 +9,6 @@ use crate::Middle;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddleAssemblerInfo {
-    // TODO: Do I want to internally have each assembler have a recipe? Even ones that do not actually have one, by just giving them a 0 -> 0 recipe? Probably. This makes stuff homogeneous
     pub(crate) current_recipe: Recipe,
     pub(crate) backend_id: AssemblerBackendID,
 
@@ -58,7 +57,6 @@ impl Middle {
         }
     }
 
-    // TODO: All additional info
     #[must_use]
     pub fn add_assembler(
         &mut self,
@@ -114,9 +112,7 @@ impl Middle {
         info: AssemblerRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
         backend: &mut Backend,
     ) -> AssemblerRemovalResult {
-        for transfer in info.inserter_changes {
-            todo!()
-        }
+        self.handle_inserter_transfer(info.inserter_changes);
 
         let assembler = self
             .assembler_list

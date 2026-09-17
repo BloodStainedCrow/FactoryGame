@@ -9,6 +9,7 @@ use data::spacial::Position;
 use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use itertools::Itertools;
 use middle_indices::{PowerGridMiddleID, PowerPoleMiddleID};
+use pathfinding::undirected::connected_components::connected_components;
 use smallvec::SmallVec;
 
 use crate::{Middle, UNATTACHED_POWER_GRID_ID};
@@ -298,7 +299,7 @@ impl Middle {
         let pole = &self
             .power_pole_list
             .remove(info.id.0 as usize)
-            .expect("Tried to ");
+            .expect("Tried to remove pole that does not exist");
 
         // Remove the removed pole from the connected poles' connection lists
         for &connected in &pole.connections {
@@ -329,7 +330,22 @@ impl Middle {
                 // No chance of splitting and all entities are already moved
             },
             2.. => {
-                todo!("Split grid if needed")
+                let components = connected_components(&pole.connections, |node| {
+                    self.power_pole_list[node.0 as usize]
+                        .connections
+                        .iter()
+                        .copied()
+                });
+
+                dbg!(&components);
+
+                assert!(!components.is_empty());
+
+                if components.len() == 1 {
+                    // No splitting required, all poles are still connected
+                } else {
+                    todo!("Split grid if needed")
+                }
             },
         }
     }
