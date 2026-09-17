@@ -2,7 +2,7 @@ use std::path::Path;
 
 use data::spacial::{BoundingBox, Extent, Position};
 use frontend::blueprint::{Blueprint, string::BlueprintString};
-use frontend::{ActionKind, GameState};
+use frontend::{ActionKind, GameState, SurfaceId};
 use proptest::{
     prelude::*,
     test_runner::{Config, FileFailurePersistence, TestError, TestRunner},
@@ -38,15 +38,20 @@ fn check_orders(
     actions: &[ActionKind],
     expect_accepted: bool,
 ) -> datatest_stable::Result<()> {
-    let strategy = Just((0..actions.len()).collect::<Vec<usize>>()).prop_shuffle();
+    let strategy = (
+        Just((0..actions.len()).collect::<Vec<usize>>()).prop_shuffle(),
+        Just((0..actions.len()).collect::<Vec<usize>>()).prop_shuffle(),
+    );
+
+    let name = path.file_name().expect("No filename").to_string_lossy();
+    let persistance_path = format!("../proptest-regressions/blueprint_tests/{name}.txt").leak();
+
     let mut runner = TestRunner::new(Config {
-        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(
-            "../proptest-regressions/blueprint_tests.txt",
-        ))),
+        failure_persistence: Some(Box::new(FileFailurePersistence::Direct(persistance_path))),
         ..Config::default()
     });
 
-    let result = runner.run(&strategy, |order| {
+    let result = runner.run(&strategy, |(order, destroy_order)| {
         let mut state = fresh_game_state();
         let reordered = Blueprint::from(
             order
@@ -55,12 +60,44 @@ fn check_orders(
                 .collect::<Vec<_>>(),
         );
 
-        let accepted = reordered.apply_to(&mut state).is_ok();
-        if accepted != expect_accepted {
-            return Err(TestCaseError::fail(format!(
-                "actions in order {order:?} were {}",
-                if accepted { "accepted" } else { "rejected" }
-            )));
+        let mut found_rejection = false;
+
+        let mut positions = vec![];
+        for action in reordered.get_actions() {
+            if let Some(pos) = action.get_building_position() {
+                positions.push(pos);
+            }
+
+            if state.apply_action(action).is_ok() != expect_accepted {
+                return Err(TestCaseError::fail(format!(
+                    "actions in order {order:?} were rejected"
+                )));
+            }
+        }
+
+        // Destroy all of them in a random order again
+        let reordered_positions = destroy_order
+            .iter()
+            .map(|&index| positions[index])
+            .collect::<Vec<_>>();
+
+        for destroy_pos in reordered_positions {
+            if state
+                .apply_action(&ActionKind::RemoveBuilding {
+                    surface_id: SurfaceId::default(),
+                    position: destroy_pos,
+                })
+                .is_ok()
+                != expect_accepted
+            {
+                return Err(TestCaseError::fail(format!(
+                    "actions in order {order:?} were rejected"
+                )));
+            }
+        }
+
+        if !expect_accepted {
+            todo!()
         }
 
         Ok(())
