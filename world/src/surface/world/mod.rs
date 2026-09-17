@@ -1,8 +1,8 @@
-use std::ops::RangeInclusive;
+use std::ops::{ControlFlow, RangeInclusive};
 
 use data::{
     max_entity_size,
-    spacial::{BoundingBox, Position},
+    spacial::{BoundingBox, Extent, Position},
 };
 use entity_info::EntityDescriptor;
 use itertools::Itertools;
@@ -133,6 +133,37 @@ impl SurfaceWorld {
         })
     }
 
+    fn run_on_chunks_that_could_contain_entities_colliding_with_mut<T>(
+        &mut self,
+        bounding_box: BoundingBox,
+        mut action: impl FnMut(&mut Chunk, Position) -> ControlFlow<T>,
+    ) -> Option<T> {
+        let top_left = get_chunk_indices_for_tile(bounding_box.top_left());
+        let bottom_right = get_chunk_indices_for_tile(bounding_box.bottom_right());
+
+        let x_range: RangeInclusive<i32> = top_left[0]..=bottom_right[0];
+        let y_range: RangeInclusive<i32> = top_left[1]..=bottom_right[1];
+
+        // TODO: Ensure the access order is aligned with the storage order for bounding_box_grid
+        for (x, y) in x_range.cartesian_product(y_range) {
+            if let Some((chunk, base_pos)) = self.chunks.get_mut(x, y).map(move |chunk| {
+                (
+                    chunk,
+                    Position {
+                        x: x * i32::from(CHUNK_SIZE),
+                        y: y * i32::from(CHUNK_SIZE),
+                    },
+                )
+            }) {
+                match (action)(chunk, base_pos) {
+                    ControlFlow::Continue(()) => {},
+                    ControlFlow::Break(v) => return Some(v),
+                }
+            }
+        }
+        None
+    }
+
     /// # Panics
     /// If the chunk is ungenerated
     pub fn add_entity(&mut self, entity: EntityDescriptor) {
@@ -141,6 +172,16 @@ impl SurfaceWorld {
         let chunk = self.chunks.get_mut(x, y).expect("Chunk not generated");
 
         chunk.add_entity(get_chunk_base_pos_from_indices([x, y]), entity);
+    }
+
+    pub(crate) fn remove_entity_at(&mut self, position: Position) -> Option<EntityDescriptor> {
+        self.run_on_chunks_that_could_contain_entities_colliding_with_mut(
+            BoundingBox::new(position, Extent::single_tile()),
+            |chunk, base_pos| match chunk.remove_entity(base_pos, position) {
+                Some(e) => ControlFlow::Break(e),
+                None => ControlFlow::Continue(()),
+            },
+        )
     }
 
     pub fn get_power_poles_overlapping(

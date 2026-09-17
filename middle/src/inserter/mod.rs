@@ -1,6 +1,9 @@
 use std::iter;
 
-use backend::{Backend, power_grid::inserter::InserterBackendID};
+use backend::{
+    Backend,
+    power_grid::inserter::{FullInserterIdentifier, InserterBackendID},
+};
 use data::item::item_set::ItemSet;
 use itertools::Itertools;
 use middle_indices::{InserterMiddleID, PowerGridMiddleID};
@@ -127,5 +130,30 @@ impl Middle {
         assert_eq!(next_index, index as u32);
 
         InserterMiddleID(next_index)
+    }
+
+    pub fn remove_inserter(&mut self, id: InserterMiddleID, backend: &mut Backend) {
+        let info = self
+            .inserter_list
+            .remove(id.0 as usize)
+            .expect("Tried to remove non-existant inserter");
+
+        let grid = self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
+
+        let sources = info
+            .sources
+            .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
+
+        backend.remove_inserter(FullInserterIdentifier {
+            grid,
+            inserter_id: info.backend_id,
+            inferred_items: &info.inferred_items,
+            source: sources,
+            dest: info.dest.map(|dest| self.get_backend_conn(dest)),
+            movetime: info.movetime,
+        });
+
+        // TODO: We currently do not apply the effect of this removed edge. This will overestimate the amount of items everywhere which is safe
+        //       Just bad for performance
     }
 }

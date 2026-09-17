@@ -1,9 +1,12 @@
-use backend::{AdditionResult, Backend, chests::ChestBackendID};
+use backend::{
+    AdditionResult, Backend,
+    chests::{ChestBackendID, FullChestIdentifier},
+};
 use data::item::item_set::ItemSet;
 use middle_indices::{ChestMiddleID, InserterMiddleID};
 use smallvec::SmallVec;
 
-use crate::Middle;
+use crate::{Middle, assembler::InserterTransfer};
 
 #[derive(Debug, Clone)]
 pub(crate) struct ChestInfo {
@@ -17,6 +20,11 @@ pub(crate) struct ChestInfo {
 pub struct ChestAdditionInfo {
     pub num_slots: u16,
     // TODO: Slot count override
+}
+
+pub struct ChestRemovalInfo<I: IntoIterator<Item = InserterTransfer>> {
+    pub id: ChestMiddleID,
+    pub inserter_changes: I,
 }
 
 impl Middle {
@@ -54,11 +62,23 @@ impl Middle {
     }
 
     /// The chest must not be connected to any inserters
-    pub fn remove_chest(&mut self, id: ChestMiddleID, _backend: &mut Backend) {
-        let chest = &self.chest_list[id.0 as usize];
+    pub fn remove_chest(
+        &mut self,
+        info: ChestRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
+        backend: &mut Backend,
+    ) {
+        let chest = self
+            .chest_list
+            .remove(info.id.0 as usize)
+            .expect("Tried to remove chest that did not exist");
 
-        assert!(chest.connected_inserters.is_empty());
+        backend.remove_chest(FullChestIdentifier {
+            items: &chest.inferred_items,
+            id: chest.backend_id,
+        });
 
-        todo!()
+        for transfer in info.inserter_changes {
+            todo!("Move inserter")
+        }
     }
 }

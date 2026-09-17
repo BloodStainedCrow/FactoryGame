@@ -17,11 +17,14 @@ use data::{
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
-    assembler::AssemblerAdditionInfo,
+    assembler::{AssemblerAdditionInfo, AssemblerRemovalInfo, InserterTransfer},
     belt::BeltTileAdditionInfo,
-    chest::ChestAdditionInfo,
+    chest::{ChestAdditionInfo, ChestRemovalInfo},
     inserter::InserterAdditionInfo,
-    power_pole::{AUTOMATIC_POLE_CONNECTION_LIMIT, PowerPoleAdditionInfo},
+    power_pole::{
+        AUTOMATIC_POLE_CONNECTION_LIMIT, EntityPowerPoleTransfer, PowerPoleAdditionInfo,
+        PowerPoleRemovalInfo,
+    },
 };
 use middle_indices::ChestMiddleID;
 use smallvec::SmallVec;
@@ -57,6 +60,12 @@ pub enum PlaceEntityError {
     FloorRule(!),
     #[error("Cannot mix fluids")]
     PipeFluidMixing(!),
+}
+
+#[derive(Debug, Error)]
+pub enum RemoveEntityError {
+    #[error("No Entity at position")]
+    NoEntity(Position),
 }
 
 pub struct SurfaceCreationOptions {
@@ -402,6 +411,98 @@ impl Surface {
             ty: ty.into(),
             kind: EntityDescriptorKind::PowerPole { id: index },
         });
+
+        Ok(())
+    }
+
+    pub fn remove_entity_at(&mut self, position: Position) -> Result<(), RemoveEntityError> {
+        let Some(entity) = self.world.remove_entity_at(position) else {
+            return Err(RemoveEntityError::NoEntity(position));
+        };
+
+        match entity.kind {
+            EntityDescriptorKind::Assembler { id } => {
+                let inserters = self.world.get_inserters_connected_to(bounding_box(
+                    entity.ty,
+                    entity.position,
+                    entity.rotation,
+                    entity.flipped,
+                ));
+
+                let inserter_changes = inserters.map(|(id, source, dest)| {
+                    InserterTransfer {
+                        // TODO
+                        id,
+                    }
+                });
+
+                let info = self.middle.remove_assembler(
+                    AssemblerRemovalInfo {
+                        id,
+                        inserter_changes,
+                    },
+                    &mut self.backend,
+                );
+            },
+            EntityDescriptorKind::Inserter { id } => {
+                let info = self.middle.remove_inserter(id, &mut self.backend);
+            },
+            EntityDescriptorKind::Belt { id } => {
+                // FIXME:
+            },
+            EntityDescriptorKind::Pipe { id } => todo!(),
+            EntityDescriptorKind::PowerPole { id } => {
+                let previously_connected_entities =
+                    self.world
+                        .get_powered_entites_for_pole(power_pole_supply_area(
+                            entity
+                                .ty
+                                .try_into()
+                                .expect("Power Pole with non PowerPoleTy"),
+                            entity.position,
+                            entity.rotation,
+                            entity.flipped,
+                        ));
+
+                let transfers = previously_connected_entities.map(|entity| {
+                    let new_pole = self.world.get_pole_for_entity_bounding_box(bounding_box(
+                        entity.ty,
+                        entity.position,
+                        entity.rotation,
+                        entity.flipped,
+                    ));
+
+                    EntityPowerPoleTransfer { entity, new_pole }
+                });
+
+                self.middle
+                    .remove_power_pole(PowerPoleRemovalInfo { id, transfers }, &mut self.backend);
+            },
+            EntityDescriptorKind::Chest { id } => {
+                let inserters = self.world.get_inserters_connected_to(bounding_box(
+                    entity.ty,
+                    entity.position,
+                    entity.rotation,
+                    entity.flipped,
+                ));
+
+                let inserter_changes = inserters.map(|(id, source, dest)| {
+                    InserterTransfer {
+                        // TODO
+                        id,
+                    }
+                });
+
+                self.middle.remove_chest(
+                    ChestRemovalInfo {
+                        id,
+                        inserter_changes,
+                    },
+                    &mut self.backend,
+                );
+            },
+            EntityDescriptorKind::SolarPanel {} => todo!(),
+        }
 
         Ok(())
     }

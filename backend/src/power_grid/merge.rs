@@ -23,10 +23,10 @@ impl Backend {
 
         let removed_grid = self
             .power_grids
-            .remove(removed.0)
+            .remove(removed.0 as usize)
             .expect("Tried to merge non-existent power grid");
 
-        let kept_grid = &mut self.power_grids[kept.0];
+        let kept_grid = &mut self.power_grids[kept.0 as usize];
 
         let mut assembler_updates = vec![];
 

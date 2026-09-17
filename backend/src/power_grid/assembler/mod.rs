@@ -44,7 +44,7 @@ impl Backend {
         grid: PowerGridBackendID,
         data: SingleRecipeAssemblerInfo,
     ) -> AdditionResult<AssemblerMiddleID, AssemblerBackendID> {
-        let assembler_list = self.power_grids[grid.0]
+        let assembler_list = self.power_grids[grid.0 as usize]
             .assemblers
             .entry(recipe)
             .or_default();
@@ -58,8 +58,10 @@ impl Backend {
     }
 
     /// NOTE: This assembler needs to already not have any inserter connections
-    pub fn remove_assembler(&mut self, _assembler: FullAssemblerIdentifier) {
-        todo!()
+    pub fn remove_assembler(&mut self, assembler: FullAssemblerIdentifier) {
+        let info = self.remove_assembler_internal(assembler);
+
+        // TODO: Return items back
     }
 
     fn remove_assembler_internal(
@@ -72,7 +74,7 @@ impl Backend {
             assembler_id,
         } = assembler;
 
-        let assembler_list = self.power_grids[grid.0]
+        let assembler_list = self.power_grids[grid.0 as usize]
             .assemblers
             .get_mut(&recipe)
             .expect("Tried to move assembler which did not exist");

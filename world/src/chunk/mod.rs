@@ -149,7 +149,7 @@ impl Chunk {
     }
 
     /// `position` must be the base pos (i.e. top left corner) of the entity to be removed
-    fn remove_entity(
+    pub fn remove_entity(
         &mut self,
         base_pos: Position,
         position: Position,
@@ -257,10 +257,7 @@ impl PosInChunk {
         let y_offs = goal_pos.y - base_pos.y;
 
         let (x_offs, y_offs): (u8, u8) = match (x_offs.try_into(), y_offs.try_into()) {
-            (Ok(x), Ok(y))
-                if x < CHUNK_SIZE && y < CHUNK_SIZE => {
-                    (x, y)
-                },
+            (Ok(x), Ok(y)) if x < CHUNK_SIZE && y < CHUNK_SIZE => (x, y),
             _ => return Err(()),
         };
 

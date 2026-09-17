@@ -1,3 +1,5 @@
+use std::cmp;
+
 use crate::{
     DATA_STORE, EntityPrototypeKind,
     entity::{GlobalTy, extent},
@@ -28,6 +30,19 @@ impl TryFrom<GlobalTy> for InserterTy {
             .map(|idx| Self(idx.try_into().expect("More than u16::MAX entities")))
             .ok_or(())
     }
+}
+
+#[must_use]
+pub fn inserter_search_range() -> u32 {
+    DATA_STORE
+        .inserters
+        .iter()
+        .flat_map(|ins| [ins.source_offset, ins.dest_offset])
+        .map(|offs| cmp::max(offs.x_offs.abs(), offs.y_offs.abs()))
+        .max()
+        .expect("No inserter ty exists")
+        .try_into()
+        .expect("We did abs before")
 }
 
 #[must_use]

@@ -11,7 +11,7 @@ use itertools::Itertools;
 use middle_indices::{PowerGridMiddleID, PowerPoleMiddleID};
 use smallvec::SmallVec;
 
-use crate::Middle;
+use crate::{Middle, UNATTACHED_POWER_GRID_ID};
 
 pub const AUTOMATIC_POLE_CONNECTION_LIMIT: usize = 4;
 
@@ -22,10 +22,23 @@ pub(crate) struct MiddlePowerPoleInfo {
     grid_id: PowerGridMiddleID,
 }
 
+#[derive(Debug)]
 pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityDescriptor>> {
     pub position: Position,
     pub connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     pub connected_entities: I,
+}
+
+#[derive(Debug)]
+pub struct PowerPoleRemovalInfo<I: IntoIterator<Item = EntityPowerPoleTransfer>> {
+    pub id: PowerPoleMiddleID,
+    pub transfers: I,
+}
+
+#[derive(Debug)]
+pub struct EntityPowerPoleTransfer {
+    pub entity: EntityDescriptor,
+    pub new_pole: Option<PowerPoleMiddleID>,
 }
 
 impl Middle {
@@ -277,38 +290,48 @@ impl Middle {
         self.power_pole_list[id.0 as usize].connections.len()
     }
 
-    pub fn remove_power_pole(&mut self, id: PowerPoleMiddleID, _backend: &mut Backend) {
-        // Remove the removed pole from the connected poles' connection lists
-        for i in 0..self.power_pole_list[id.0 as usize].connections.len() {
-            let connected = self.power_pole_list[id.0 as usize].connections[i];
+    pub fn remove_power_pole(
+        &mut self,
+        info: PowerPoleRemovalInfo<impl IntoIterator<Item = EntityPowerPoleTransfer>>,
+        backend: &mut Backend,
+    ) {
+        let pole = &self
+            .power_pole_list
+            .remove(info.id.0 as usize)
+            .expect("Tried to ");
 
-            assert_ne!(connected, id, "Power pole connected to itself");
+        // Remove the removed pole from the connected poles' connection lists
+        for &connected in &pole.connections {
+            assert_ne!(connected, info.id, "Power pole connected to itself");
 
             self.power_pole_list[connected.0 as usize]
                 .connections
-                .retain(|v| *v != id);
+                .retain(|v| *v != info.id);
         }
 
-        let pole = &self.power_pole_list[id.0 as usize];
+        // Remove the connected entities from this pole
+        for transfer in info.transfers {
+            assert_ne!(Some(info.id), transfer.new_pole);
+            let new_grid = transfer.new_pole.map_or(UNATTACHED_POWER_GRID_ID, |pole| {
+                self.power_pole_list[pole.0 as usize].grid_id
+            });
+            self.make_entity_powered_by_grid(transfer.entity, new_grid, backend);
+        }
+
+        let grid = &mut self.power_grid_list[pole.grid_id.0 as usize];
 
         match pole.connections.len() {
             0 => {
                 // This is the last pole of this grid. Remove it.
-                todo!("Remove grid")
+                backend.remove_power_grid(grid.backend_id);
             },
             1 => {
-                // No chance of splitting
-
-                todo!("Remove pole from grid/remove connected stuff from grid")
+                // No chance of splitting and all entities are already moved
             },
             2.. => {
                 todo!("Split grid if needed")
             },
         }
-
-        self.power_pole_list
-            .remove(id.0 as usize)
-            .expect("Must exist");
     }
 
     fn make_entity_powered_by_grid(

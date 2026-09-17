@@ -1,10 +1,14 @@
 use std::collections::btree_map::Entry;
 
-use data::spacial::Position;
+use data::{
+    entity::inserter::{get_input_position, get_output_position, inserter_search_range},
+    spacial::{BoundingBox, Position},
+};
 use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use middle::{chest::ChestAdditionInfo, inserter::conn::Conn};
+use middle_indices::InserterMiddleID;
 
-use crate::surface::Surface;
+use crate::surface::{Surface, world::SurfaceWorld};
 
 impl Surface {
     pub fn get_source_conns_or_add_floor_conn(&mut self, position: Position) -> Vec<Conn> {
@@ -47,6 +51,35 @@ impl Surface {
                 }),
             },
         }
+    }
+}
+
+impl SurfaceWorld {
+    pub fn get_inserters_connected_to(
+        &self,
+        bb: BoundingBox,
+    ) -> impl Iterator<Item = (InserterMiddleID, bool, bool)> {
+        self.get_entities_in_area(bb.extend_evenly(inserter_search_range()))
+            .filter_map(move |entity| match entity.kind {
+                EntityDescriptorKind::Inserter { id } => {
+                    let source = get_input_position(
+                        entity.ty.try_into().expect("Inserter with non InserterTy"),
+                        entity.position,
+                        entity.rotation,
+                        entity.flipped,
+                    );
+                    let dest = get_output_position(
+                        entity.ty.try_into().expect("Inserter with non InserterTy"),
+                        entity.position,
+                        entity.rotation,
+                        entity.flipped,
+                    );
+
+                    Some((id, bb.contains(source), bb.contains(dest)))
+                },
+
+                _ => None,
+            })
     }
 }
 

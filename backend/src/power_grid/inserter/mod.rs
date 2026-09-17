@@ -66,7 +66,7 @@ impl Backend {
         kind: &InserterKind,
         data: SingleInserterInfo,
     ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
-        let power_grid = &mut self.power_grids[grid.0];
+        let power_grid = &mut self.power_grids[grid.0 as usize];
 
         let new_id = power_grid.inserters.add_inserter(kind, data);
 
@@ -75,16 +75,18 @@ impl Backend {
             relocations: vec![],
         }
     }
-    /// NOTE: This inserter needs to already not have any inserter connections
-    pub fn remove_inserter(&mut self, _inserter: FullInserterIdentifier) {
-        todo!()
+
+    pub fn remove_inserter(&mut self, inserter: FullInserterIdentifier) {
+        let (state, _kind) = self.remove_inserter_internal(inserter);
+
+        // FIXME: return state info
     }
 
     pub(crate) fn remove_inserter_internal(
         &mut self,
         inserter: FullInserterIdentifier,
     ) -> (SingleInserterInfo, InserterKind) {
-        let grid = &mut self.power_grids[inserter.grid.0];
+        let grid = &mut self.power_grids[inserter.grid.0 as usize];
 
         let kind = InserterKind::from_ident(inserter);
         let state = grid.inserters.remove_inserter(inserter.inserter_id, &kind);
@@ -104,7 +106,7 @@ impl Backend {
 
     #[must_use]
     pub fn get_inserter_state(&self, inserter: FullInserterIdentifier) -> InserterRenderState {
-        let grid = &self.power_grids[inserter.grid.0];
+        let grid = &self.power_grids[inserter.grid.0 as usize];
 
         grid.inserters
             .get_inserter_state(inserter.inserter_id, &InserterKind::from_ident(inserter))

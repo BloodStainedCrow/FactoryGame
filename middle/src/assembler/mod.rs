@@ -1,6 +1,9 @@
-use backend::{Backend, RelocationInfo, power_grid::assembler::AssemblerBackendID};
+use backend::{
+    Backend, RelocationInfo,
+    power_grid::assembler::{AssemblerBackendID, FullAssemblerIdentifier},
+};
 use data::{entity::assember::Recipe, item::ItemStack};
-use middle_indices::{AssemblerMiddleID, PowerGridMiddleID};
+use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID};
 
 use crate::Middle;
 
@@ -14,8 +17,6 @@ pub(crate) struct MiddleAssemblerInfo {
     // TODO: I might want to make this into an enum, that encodes, that some assemblers might be shared by multiple power grids
     // Likely this would mean either Solo(ID) or Shared (i.e. Option)
     pub(crate) power_grid_id: PowerGridMiddleID,
-
-    connected_inserters: Vec<!>,
     // modules: !,
 }
 
@@ -24,7 +25,16 @@ pub struct AssemblerAdditionInfo {
     pub power_grid: PowerGridMiddleID,
 }
 
-pub struct AssemblerRemovalInfo {
+pub struct InserterTransfer {
+    pub id: InserterMiddleID,
+}
+
+pub struct AssemblerRemovalInfo<I: IntoIterator<Item = InserterTransfer>> {
+    pub id: AssemblerMiddleID,
+    pub inserter_changes: I,
+}
+
+pub struct AssemblerRemovalResult {
     pub returned_items: Vec<ItemStack>,
 }
 
@@ -81,7 +91,6 @@ impl Middle {
             current_recipe: info.recipe,
             power_grid_id: info.power_grid,
             backend_id,
-            connected_inserters: Vec::default(),
         });
 
         assert_eq!(next_index, index);
@@ -95,16 +104,35 @@ impl Middle {
         new_recipe: Recipe,
         _backend: &mut Backend,
     ) {
-        // TODO: This will impact the graph
+        // FIXME: This will impact the graph
         self.assembler_list[id.0 as usize].current_recipe = new_recipe;
     }
 
     #[must_use]
     pub fn remove_assembler(
         &mut self,
-        _id: AssemblerMiddleID,
-        _backend: &mut Backend,
-    ) -> AssemblerRemovalInfo {
-        todo!()
+        info: AssemblerRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
+        backend: &mut Backend,
+    ) -> AssemblerRemovalResult {
+        for transfer in info.inserter_changes {
+            todo!()
+        }
+
+        let assembler = self
+            .assembler_list
+            .remove(info.id.0 as usize)
+            .expect("Tried to remove assembler that did not exist");
+
+        let grid = self.power_grid_list[assembler.power_grid_id.0 as usize].backend_id;
+
+        backend.remove_assembler(FullAssemblerIdentifier {
+            recipe: assembler.current_recipe,
+            grid,
+            assembler_id: assembler.backend_id,
+        });
+
+        AssemblerRemovalResult {
+            returned_items: vec![],
+        }
     }
 }

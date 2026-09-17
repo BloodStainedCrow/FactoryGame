@@ -11,7 +11,7 @@ use data::{
     spacial::{Flipped, NonSnappingPosition, Position, Rotation},
 };
 use thiserror::Error;
-use world::surface::PlaceEntityError;
+use world::surface::{PlaceEntityError, RemoveEntityError};
 
 use crate::{GameState, SurfaceId};
 
@@ -42,6 +42,15 @@ pub enum ActionKind {
     RemoveResearchFromQueue {
         tech: TechnologyID,
     },
+}
+
+impl ActionKind {
+    pub fn get_building_position(&self) -> Option<Position> {
+        match self {
+            Self::PlaceBuilding { building_info, .. } => Some(building_info.position),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -106,6 +115,9 @@ pub(crate) enum ForceKind {
 pub enum ApplyActionError {
     #[error("Could not place entity")]
     PlaceEntity(#[from] PlaceEntityError),
+
+    #[error("Could not remove entity")]
+    RemoveEntity(#[from] RemoveEntityError),
 }
 
 impl GameState {
@@ -159,7 +171,12 @@ impl GameState {
             ActionKind::RemoveBuilding {
                 surface_id,
                 position,
-            } => todo!(),
+            } => {
+                // FIXME: Support for multiple surfaces
+                let surface = &mut self.surfaces[surface_id.0 as usize];
+
+                surface.remove_entity_at(*position)?
+            },
             ActionKind::SetPlayerPos {
                 player_id,
                 surface_id,

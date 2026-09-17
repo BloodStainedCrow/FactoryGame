@@ -15,7 +15,7 @@ mod update;
 pub const NO_POWER_BACKEND_ID: PowerGridBackendID = PowerGridBackendID(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PowerGridBackendID(usize);
+pub struct PowerGridBackendID(u32);
 
 #[derive(Debug, Clone)]
 pub(super) struct PowerGrid {
@@ -38,7 +38,7 @@ impl Backend {
     pub fn get_power_grid_size(&self, id: PowerGridBackendID) -> PowerGridSize {
         // This is just an optimization. The number means nothing and should just encode the cost of merging power
         PowerGridSize(
-            self.power_grids[id.0]
+            self.power_grids[id.0 as usize]
                 .assemblers
                 .values()
                 .map(StableVec::next_push_index)

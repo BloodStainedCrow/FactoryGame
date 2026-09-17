@@ -71,7 +71,8 @@ impl Backend {
         data.into()
     }
 
-    pub fn remove_chest(&mut self, _chest: FullChestIdentifier) -> ! {
-        todo!()
+    pub fn remove_chest(&mut self, chest: FullChestIdentifier) {
+        let _state = self.remove_chest_internal(chest);
+        // TODO: Return value
     }
 }

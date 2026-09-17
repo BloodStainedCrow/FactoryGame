@@ -27,8 +27,13 @@ impl Backend {
         });
 
         AdditionResult::Added {
-            new_id: PowerGridBackendID(next_id),
+            new_id: PowerGridBackendID(next_id.try_into().expect("More than u32::MAX power grids")),
             relocations: vec![],
         }
+    }
+
+    pub fn remove_power_grid(&mut self, id: PowerGridBackendID) {
+        // TODO: assert this pg is empty
+        self.power_grids.remove(id.0 as usize);
     }
 }
