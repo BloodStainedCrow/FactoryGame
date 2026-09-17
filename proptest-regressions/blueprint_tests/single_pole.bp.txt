@@ -4,5 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc 8fcb7b977cc0c3eaf6eb4ef8247a7f06908244d3e349eb3c5536c9148e2aabf0 # shrinks to ([0, 1, 2, 3], [0, 1, 2, 3])
-cc ae322f4d1f606c8884115016507222dc715b1949e31560c3f9c2493c0079108d # shrinks to ([0, 1, 2, 3], [1, 2, 3, 0])
+cc 7ecbf21e9499304bbdab5b7e9749d2d412fef22cdab584198d591b2d6e887ee7 # shrinks to ([0], [0])
