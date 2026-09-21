@@ -337,8 +337,6 @@ impl Middle {
                         .copied()
                 });
 
-                dbg!(&components);
-
                 assert!(!components.is_empty());
 
                 if components.len() == 1 {
@@ -392,7 +390,7 @@ impl Middle {
                     .sources
                     .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
 
-                match backend.move_inserter(
+                match backend.move_inserter_into_new_grid(
                     FullInserterIdentifier {
                         grid: current_grid_backend,
                         inserter_id: info.backend_id,

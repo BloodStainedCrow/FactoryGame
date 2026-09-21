@@ -442,22 +442,22 @@ impl From<(Rotation, Flipped)> for RotationWithFlipped {
 }
 
 const MAPPING: EnumMap<RotationWithFlipped, (Rotation, Flipped)> = EnumMap::from_array([
-    (Rotation::North, Flipped::unflipped()),
-    (Rotation::East, Flipped::unflipped()),
-    (Rotation::South, Flipped::unflipped()),
-    (Rotation::West, Flipped::unflipped()),
     (Rotation::North, Flipped::both()),
     (Rotation::East, Flipped::both()),
     (Rotation::South, Flipped::both()),
     (Rotation::West, Flipped::both()),
-    (Rotation::North, Flipped::horizontal()),
-    (Rotation::East, Flipped::horizontal()),
-    (Rotation::South, Flipped::horizontal()),
-    (Rotation::West, Flipped::horizontal()),
     (Rotation::North, Flipped::vertical()),
     (Rotation::East, Flipped::vertical()),
     (Rotation::South, Flipped::vertical()),
     (Rotation::West, Flipped::vertical()),
+    (Rotation::North, Flipped::horizontal()),
+    (Rotation::East, Flipped::horizontal()),
+    (Rotation::South, Flipped::horizontal()),
+    (Rotation::West, Flipped::horizontal()),
+    (Rotation::North, Flipped::unflipped()),
+    (Rotation::East, Flipped::unflipped()),
+    (Rotation::South, Flipped::unflipped()),
+    (Rotation::West, Flipped::unflipped()),
 ]);
 
 impl From<RotationWithFlipped> for (Rotation, Flipped) {

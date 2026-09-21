@@ -160,9 +160,105 @@ impl Middle {
     pub(crate) fn handle_inserter_transfer(
         &mut self,
         transfers: impl IntoIterator<Item = InserterTransfer>,
+        backend: &mut Backend,
     ) {
+        // TODO: Support changes without disrupting the backend as much (i.e. keep swing)
         for transfer in transfers {
-            todo!()
+            assert!(transfer.sources.is_some() || transfer.dest.is_some());
+            let info = self.inserter_list.remove(transfer.id.0 as usize).unwrap();
+
+            let new_source = transfer
+                .sources
+                .unwrap_or_else(|| info.sources.into_iter().flatten().collect());
+            let new_dest = transfer.dest.unwrap_or(info.dest);
+
+            let grid = self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
+
+            let source_items = new_source
+                .iter()
+                .map(|source| self.get_items_takeable_from(*source))
+                .reduce(|mut a, b| {
+                    a.union(&b);
+                    a
+                })
+                .unwrap_or(ItemSet::empty());
+
+            let dest_items = new_dest.map(|dest| self.get_items_placeable_into(dest));
+
+            let mut items = source_items;
+            items.intersection(&info.user_filter);
+            if let Some(dest_items) = &dest_items {
+                items.intersection(dest_items);
+            }
+
+            if let Some(dest) = &new_dest {
+                for &source in &new_source {
+                    self.apply_effect_of_new_edge(source, *dest, &items, backend);
+                }
+            }
+
+            let new_sources = new_source
+                .iter()
+                .copied()
+                .map(Option::Some)
+                .chain(iter::repeat(None))
+                .take(MAX_CONN_COUNT)
+                .collect_array()
+                .expect("Take ensures len");
+
+            let new_backend_sources = new_source
+                .into_iter()
+                .map(|conn| self.get_backend_conn(conn))
+                .collect();
+
+            let sources = info
+                .sources
+                .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
+
+            let res = backend.change_inserter_conn(
+                FullInserterIdentifier {
+                    grid,
+                    inserter_id: info.backend_id,
+                    inferred_items: &info.inferred_items,
+                    source: sources,
+                    dest: info.dest.map(|dest| self.get_backend_conn(dest)),
+                    movetime: info.movetime,
+                },
+                &backend::power_grid::inserter::InserterAdditionInfo {
+                    power_grid: grid,
+                    middle_id: transfer.id,
+                    source: new_backend_sources,
+                    dest: new_dest.map(|dest| self.get_backend_conn(dest)),
+                    items: items.clone(),
+                    movetime: info.movetime,
+                },
+            );
+
+            let new_id = match res {
+                backend::AdditionResult::Added {
+                    new_id,
+                    relocations,
+                } => {
+                    if !relocations.is_empty() {
+                        todo!("Handle relocations");
+                    }
+                    new_id
+                },
+                backend::AdditionResult::Failed { info: _ } => todo!(),
+            };
+
+            self.inserter_list.insert(
+                transfer.id.0 as usize,
+                InserterInfo {
+                    backend_id: new_id,
+                    power_grid_id: info.power_grid_id,
+                    sources: new_sources,
+                    dest: new_dest,
+                    inferred_items: items,
+                    movetime: info.movetime,
+                    user_filter: info.user_filter,
+                },
+            );
         }
     }
 }

@@ -5,7 +5,7 @@ use backend::{
 use data::{entity::assember::Recipe, item::ItemStack};
 use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID};
 
-use crate::Middle;
+use crate::{Middle, inserter::conn::Conn};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddleAssemblerInfo {
@@ -24,8 +24,11 @@ pub struct AssemblerAdditionInfo {
     pub power_grid: PowerGridMiddleID,
 }
 
+#[derive(Debug)]
 pub struct InserterTransfer {
     pub id: InserterMiddleID,
+    pub sources: Option<Vec<Conn>>,
+    pub dest: Option<Option<Conn>>,
 }
 
 pub struct AssemblerRemovalInfo<I: IntoIterator<Item = InserterTransfer>> {
@@ -112,7 +115,7 @@ impl Middle {
         info: AssemblerRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
         backend: &mut Backend,
     ) -> AssemblerRemovalResult {
-        self.handle_inserter_transfer(info.inserter_changes);
+        self.handle_inserter_transfer(info.inserter_changes, backend);
 
         let assembler = self
             .assembler_list

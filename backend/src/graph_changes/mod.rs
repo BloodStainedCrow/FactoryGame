@@ -70,7 +70,7 @@ impl Backend {
                 .map(|(ident, (state, changes))| (ident, state, changes)),
         );
 
-        // TODO: Inserter readdition. That required a ton of logic compared to the rest
+        // FIXME: Inserter readdition. That required a ton of logic compared to the rest
 
         GraphChangesResult {
             inserter_updates: Vec::new(),

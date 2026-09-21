@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 
 use backend::Backend;
 use data::{
@@ -15,12 +15,13 @@ use data::{
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
+use itertools::Itertools;
 use middle::{
     Middle, UNATTACHED_POWER_GRID_ID,
     assembler::{AssemblerAdditionInfo, AssemblerRemovalInfo, InserterTransfer},
     belt::BeltTileAdditionInfo,
     chest::{ChestAdditionInfo, ChestRemovalInfo},
-    inserter::InserterAdditionInfo,
+    inserter::{InserterAdditionInfo, conn::Conn},
     power_pole::{
         AUTOMATIC_POLE_CONNECTION_LIMIT, EntityPowerPoleTransfer, PowerPoleAdditionInfo,
         PowerPoleRemovalInfo,
@@ -429,12 +430,44 @@ impl Surface {
                     entity.flipped,
                 ));
 
-                let inserter_changes = inserters.map(|(id, source, dest)| {
-                    InserterTransfer {
-                        // TODO
+                let inserter_changes = inserters
+                    .map(|(id, source, dest)| InserterTransfer {
                         id,
-                    }
-                });
+                        sources: source.map(|pos| {
+                            vec![match self.floor_chests.entry(pos) {
+                                Entry::Vacant(vacant_entry) => {
+                                    let floor_chest_id = self.middle.add_chest(
+                                        &ChestAdditionInfo { num_slots: 1 },
+                                        &mut self.backend,
+                                    );
+
+                                    vacant_entry.insert(floor_chest_id);
+
+                                    Conn::Chest { id: floor_chest_id }
+                                },
+                                Entry::Occupied(occupied_entry) => Conn::Chest {
+                                    id: *occupied_entry.get(),
+                                },
+                            }]
+                        }),
+
+                        dest: dest.map(|pos| match self.floor_chests.entry(pos) {
+                            Entry::Vacant(vacant_entry) => {
+                                let floor_chest_id = self.middle.add_chest(
+                                    &ChestAdditionInfo { num_slots: 1 },
+                                    &mut self.backend,
+                                );
+
+                                vacant_entry.insert(floor_chest_id);
+
+                                Some(Conn::Chest { id: floor_chest_id })
+                            },
+                            Entry::Occupied(occupied_entry) => Some(Conn::Chest {
+                                id: *occupied_entry.get(),
+                            }),
+                        }),
+                    })
+                    .collect_vec();
 
                 let info = self.middle.remove_assembler(
                     AssemblerRemovalInfo {
@@ -486,12 +519,43 @@ impl Surface {
                     entity.flipped,
                 ));
 
-                let inserter_changes = inserters.map(|(id, source, dest)| {
-                    InserterTransfer {
-                        // TODO
+                let inserter_changes = inserters
+                    .map(|(id, source, dest)| InserterTransfer {
                         id,
-                    }
-                });
+                        sources: source.map(|pos| {
+                            vec![match self.floor_chests.entry(pos) {
+                                Entry::Vacant(vacant_entry) => {
+                                    let floor_chest_id = self.middle.add_chest(
+                                        &ChestAdditionInfo { num_slots: 1 },
+                                        &mut self.backend,
+                                    );
+
+                                    vacant_entry.insert(floor_chest_id);
+
+                                    Conn::Chest { id: floor_chest_id }
+                                },
+                                Entry::Occupied(occupied_entry) => Conn::Chest {
+                                    id: *occupied_entry.get(),
+                                },
+                            }]
+                        }),
+                        dest: dest.map(|pos| match self.floor_chests.entry(pos) {
+                            Entry::Vacant(vacant_entry) => {
+                                let floor_chest_id = self.middle.add_chest(
+                                    &ChestAdditionInfo { num_slots: 1 },
+                                    &mut self.backend,
+                                );
+
+                                vacant_entry.insert(floor_chest_id);
+
+                                Some(Conn::Chest { id: floor_chest_id })
+                            },
+                            Entry::Occupied(occupied_entry) => Some(Conn::Chest {
+                                id: *occupied_entry.get(),
+                            }),
+                        }),
+                    })
+                    .collect_vec();
 
                 self.middle.remove_chest(
                     ChestRemovalInfo {

@@ -58,7 +58,7 @@ impl SurfaceWorld {
     pub fn get_inserters_connected_to(
         &self,
         bb: BoundingBox,
-    ) -> impl Iterator<Item = (InserterMiddleID, bool, bool)> {
+    ) -> impl Iterator<Item = (InserterMiddleID, Option<Position>, Option<Position>)> {
         self.get_entities_in_area(bb.extend_evenly(inserter_search_range()))
             .filter_map(move |entity| match entity.kind {
                 EntityDescriptorKind::Inserter { id } => {
@@ -75,7 +75,15 @@ impl SurfaceWorld {
                         entity.flipped,
                     );
 
-                    Some((id, bb.contains(source), bb.contains(dest)))
+                    if bb.contains(source) || bb.contains(dest) {
+                        Some((
+                            id,
+                            bb.contains(source).then_some(source),
+                            bb.contains(dest).then_some(dest),
+                        ))
+                    } else {
+                        None
+                    }
                 },
 
                 _ => None,

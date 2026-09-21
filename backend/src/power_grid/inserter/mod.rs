@@ -94,7 +94,7 @@ impl Backend {
         (state, kind)
     }
 
-    pub fn move_inserter(
+    pub fn move_inserter_into_new_grid(
         &mut self,
         inserter: FullInserterIdentifier,
         new_grid: PowerGridBackendID,
@@ -110,6 +110,20 @@ impl Backend {
 
         grid.inserters
             .get_inserter_state(inserter.inserter_id, &InserterKind::from_ident(inserter))
+    }
+
+    pub fn change_inserter_conn(
+        &mut self,
+        ident: FullInserterIdentifier,
+        new_info: &InserterAdditionInfo,
+    ) -> AdditionResult<InserterMiddleID, InserterBackendID> {
+        let (info, _old_kind) = self.remove_inserter_internal(ident);
+
+        self.add_inserter_internal(
+            new_info.power_grid,
+            &InserterKind::from_addition(new_info),
+            info,
+        )
     }
 }
 

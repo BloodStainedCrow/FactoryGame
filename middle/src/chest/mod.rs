@@ -67,7 +67,7 @@ impl Middle {
         info: ChestRemovalInfo<impl IntoIterator<Item = InserterTransfer>>,
         backend: &mut Backend,
     ) {
-        self.handle_inserter_transfer(info.inserter_changes);
+        self.handle_inserter_transfer(info.inserter_changes, backend);
 
         let chest = self
             .chest_list
