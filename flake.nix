@@ -50,6 +50,7 @@
 
       clang
       wild
+      mold
     ];
 
     built_overrides = {

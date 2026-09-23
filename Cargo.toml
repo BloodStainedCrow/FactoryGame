@@ -15,6 +15,10 @@ missing_panics_doc = { level = "allow", priority = 1 }
 assert_is_empty = { level = "allow", priority = 1 }
 legacy_numeric_constants = "deny"
 
+
+[profile.release]
+lto = true
+
 [profile.release-with-debug]
 inherits = "release"
 debug = true

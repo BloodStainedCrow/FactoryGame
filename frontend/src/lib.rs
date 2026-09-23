@@ -67,11 +67,29 @@ impl Default for GameState {
         // assert_eq!(bp, round_trip);
 
         let start = Instant::now();
+        let mut positions = vec![];
         for action in bp.get_actions() {
+            if let Some(pos) = action.get_building_position() {
+                positions.push(pos);
+            }
             ret.apply_action(action)
                 .unwrap_or_else(|_| panic!("Failed to apply action {:?}", action));
         }
         dbg!(start.elapsed());
+        let start_remove = Instant::now();
+
+        let mut i = 0;
+        for pos in positions {
+            ret.apply_action(&ActionKind::RemoveBuilding {
+                surface_id: SurfaceId::default(),
+                position: pos,
+            })
+            .expect("Failed to remove building");
+            dbg!(i);
+            i += 1;
+        }
+
+        dbg!(start_remove.elapsed());
 
         ret
     }

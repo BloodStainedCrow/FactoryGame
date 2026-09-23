@@ -1,15 +1,24 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::Hash,
+    iter,
+};
+
 use backend::{
     Backend,
     power_grid::{
-        addition::PowerGridAdditionInfo, assembler::FullAssemblerIdentifier,
-        inserter::FullInserterIdentifier, merge::PowerGridMergeResult,
+        addition::PowerGridAdditionInfo,
+        assembler::FullAssemblerIdentifier,
+        inserter::FullInserterIdentifier,
+        merge::PowerGridMergeResult,
+        split::{PowerGridSplitInfo, PowerGridSplitResult},
     },
 };
 use data::spacial::Position;
 use entity_info::{EntityDescriptor, EntityDescriptorKind};
-use itertools::Itertools;
-use middle_indices::{PowerGridMiddleID, PowerPoleMiddleID};
-use pathfinding::undirected::connected_components::connected_components;
+use itertools::{Either, Itertools};
+use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID, PowerPoleMiddleID};
+use pathfinding::directed::dfs::dfs_reach;
 use smallvec::SmallVec;
 
 use crate::{Middle, UNATTACHED_POWER_GRID_ID};
@@ -20,7 +29,14 @@ pub const AUTOMATIC_POLE_CONNECTION_LIMIT: usize = 4;
 pub(crate) struct MiddlePowerPoleInfo {
     position: Position,
     connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
+    connected_things: SmallVec<[PowerPoleConnectedThing; 2]>,
     grid_id: PowerGridMiddleID,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PowerPoleConnectedThing {
+    Assembler(AssemblerMiddleID),
+    Inserter(InserterMiddleID),
 }
 
 #[derive(Debug)]
@@ -195,9 +211,21 @@ impl Middle {
             },
         };
 
+        let connected_entities = connected_entities.into_iter().collect_vec();
+        let connected_things = connected_entities
+            .iter()
+            .map(|e| match e.kind {
+                EntityDescriptorKind::Assembler { id } => PowerPoleConnectedThing::Assembler(id),
+                EntityDescriptorKind::Inserter { id } => PowerPoleConnectedThing::Inserter(id),
+
+                _ => unreachable!(),
+            })
+            .collect();
+
         let real_index = self.power_pole_list.push(MiddlePowerPoleInfo {
             position,
             connections,
+            connected_things,
             grid_id: middle_grid_id,
         });
 
@@ -330,19 +358,112 @@ impl Middle {
                 // No chance of splitting and all entities are already moved
             },
             2.. => {
-                let components = connected_components(&pole.connections, |node| {
-                    self.power_pole_list[node.0 as usize]
-                        .connections
-                        .iter()
-                        .copied()
-                });
+                let mut components =
+                    connected_components_for_poles(pole.connections.iter().copied(), |node| {
+                        self.power_pole_list[node.0 as usize]
+                            .connections
+                            .iter()
+                            .copied()
+                    });
+
+                components.sort_by_key(|c| -(c.len() as isize));
 
                 assert!(!components.is_empty());
 
                 if components.len() == 1 {
                     // No splitting required, all poles are still connected
                 } else {
-                    todo!("Split grid if needed")
+                    let grid = grid.backend_id;
+                    let (mut assemblers, mut inserters) = (BTreeMap::new(), BTreeMap::new());
+                    for (a, b) in components
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(comp_index, component)| {
+                            component
+                                .iter()
+                                .flat_map(|pole| {
+                                    self.power_pole_list[pole.0 as usize]
+                                        .connected_things
+                                        .iter()
+                                        .map(|thing| thing)
+                                })
+                                .map(move |thing| (comp_index, thing))
+                        })
+                        .map(|(comp_index, pole_conn)| match pole_conn {
+                            PowerPoleConnectedThing::Assembler(assembler_middle_id) => {
+                                let assembler =
+                                    &self.assembler_list[assembler_middle_id.0 as usize];
+
+                                let grid = self.power_grid_list[assembler.power_grid_id.0 as usize]
+                                    .backend_id;
+
+                                (
+                                    Either::Left(iter::once((
+                                        FullAssemblerIdentifier {
+                                            recipe: assembler.current_recipe,
+                                            grid,
+                                            assembler_id: assembler.backend_id,
+                                        },
+                                        comp_index.try_into().expect(
+                                            "Tried to split into more than u8::MAX components",
+                                        ),
+                                    ))),
+                                    Either::Right(iter::empty()),
+                                )
+                            },
+                            PowerPoleConnectedThing::Inserter(inserter_middle_id) => {
+                                let inserter = &self.inserter_list[inserter_middle_id.0 as usize];
+                                let grid = self.power_grid_list[inserter.power_grid_id.0 as usize]
+                                    .backend_id;
+
+                                (
+                                    Either::Right(iter::empty()),
+                                    Either::Left(iter::once((
+                                        FullInserterIdentifier {
+                                            grid,
+                                            inserter_id: inserter.backend_id,
+                                            inferred_items: &inserter.inferred_items,
+                                            source: todo!(),
+                                            dest: todo!(),
+                                            movetime: inserter.movetime,
+                                        },
+                                        comp_index.try_into().expect(
+                                            "Tried to split into more than u8::MAX components",
+                                        ),
+                                    ))),
+                                )
+                            },
+                        })
+                    {
+                        assemblers.extend(a);
+                        inserters.extend(b);
+                    }
+
+                    let PowerGridSplitResult {
+                        grid_updates,
+                        assembler_updates,
+                        inserter_updates,
+                    } = backend.split_power_grid(PowerGridSplitInfo {
+                        id: grid,
+                        new_count: components.len() - 1,
+                        new_middles: |backend_id| self.add_power_grid(backend_id),
+                        assemblers,
+                        inserters,
+                    });
+
+                    for grid_update in grid_updates {
+                        todo!("Handle grid updates");
+                    }
+
+                    for (assembler, (new_grid, new_id)) in assembler_updates {
+                        self.assembler_list[assembler.0 as usize].backend_id = new_id;
+                        self.assembler_list[assembler.0 as usize].power_grid_id = new_grid;
+                    }
+
+                    for (inserter, (new_grid, new_id)) in inserter_updates {
+                        self.inserter_list[inserter.0 as usize].backend_id = new_id;
+                        self.inserter_list[inserter.0 as usize].power_grid_id = new_grid;
+                    }
                 }
             },
         }
@@ -423,6 +544,25 @@ impl Middle {
             | EntityDescriptorKind::Pipe { .. } => unreachable!(),
         }
     }
+}
+
+pub fn connected_components_for_poles<T: Copy + Eq + Ord + Hash, I: IntoIterator<Item = T>>(
+    starts: impl IntoIterator<Item = T>,
+    neighbors: impl Fn(&T) -> I,
+) -> Vec<BTreeSet<T>> {
+    let mut components: Vec<BTreeSet<T>> = Vec::new();
+    for start in starts {
+        if components.iter().any(|comp| comp.contains(&start)) {
+            // Already in one component
+            continue;
+        }
+
+        let reachable = dfs_reach(start, &neighbors).collect();
+
+        components.push(reachable);
+    }
+
+    components
 }
 
 #[cfg(test)]
@@ -508,5 +648,19 @@ mod test {
             }
 
         }
+    }
+
+    #[test]
+    fn example() {
+        // 0 - 1 - 2 - 3
+        let components = connected_components_for_poles([0, 3], |node| match node {
+            0 => [1].as_slice().iter().copied(),
+            1 => [0, 2].as_slice().iter().copied(),
+            2 => [1, 3].as_slice().iter().copied(),
+            3 => [2].as_slice().iter().copied(),
+            _ => unreachable!(),
+        });
+
+        assert_eq!(components.len(), 1);
     }
 }

@@ -70,4 +70,26 @@ impl Middle {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use std::collections::BTreeMap;
+
+    use backend::power_grid::assembler::FullAssemblerIdentifier;
+
+    fn test() {
+        let mut a: BTreeMap<FullAssemblerIdentifier, u8> = Default::default();
+
+        let iter = [(
+            FullAssemblerIdentifier {
+                recipe: todo!(),
+                grid: todo!(),
+                assembler_id: todo!(),
+            },
+            0 as u8,
+        )]
+        .as_slice()
+        .iter()
+        .copied();
+
+        a.extend(iter);
+    }
+}

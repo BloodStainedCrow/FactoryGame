@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use data::item::Item;
 use itertools::Either;
@@ -8,7 +8,10 @@ use stable_vec::StableVec;
 use crate::{
     RelocationInfo,
     inserter::pure::{InserterRenderState, PureOneToOneInserterStore},
-    power_grid::inserter::{InserterBackendID, InserterKind, SingleInserterInfo},
+    power_grid::{
+        PowerGridBackendID,
+        inserter::{FullInserterIdentifier, InserterBackendID, InserterKind, SingleInserterInfo},
+    },
 };
 
 #[derive(Debug, Clone, Default)]
@@ -46,6 +49,9 @@ impl InserterStore {
 
                 id
             },
+            InserterKind::SushiToSushiSingleItem { .. } => todo!(),
+            InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
+            InserterKind::OneToPureBeltSingleItem { .. } => todo!(),
         }
     }
 
@@ -67,6 +73,9 @@ impl InserterStore {
                 // CORRECTNESS: We checked waitlist before
                 self.pure_to_pure[&item][&movetime].get_state_after_checking_waitlist(id)
             },
+            InserterKind::SushiToSushiSingleItem { .. } => todo!(),
+            InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
+            InserterKind::OneToPureBeltSingleItem { .. } => todo!(),
 
             InserterKind::EmptyInserter {} => InserterRenderState::WaitingForItems(0),
         }
@@ -107,6 +116,9 @@ impl InserterStore {
                     },
                 }
             },
+            InserterKind::SushiToSushiSingleItem { .. } => todo!(),
+            InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
+            InserterKind::OneToPureBeltSingleItem { .. } => todo!(),
 
             InserterKind::EmptyInserter {} => self
                 .empty_inserters
@@ -143,5 +155,15 @@ impl InserterStore {
         }
 
         relocation
+    }
+
+    pub(crate) fn split<'a>(
+        &mut self,
+        old_grid_id: PowerGridBackendID,
+        new_count: usize,
+        inserter_map: &HashMap<FullInserterIdentifier<'a>, u8>,
+        grid_id_map: &[PowerGridBackendID],
+    ) -> ! {
+        todo!()
     }
 }

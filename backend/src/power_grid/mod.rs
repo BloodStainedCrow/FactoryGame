@@ -10,11 +10,12 @@ pub mod assembler;
 pub mod inserter;
 pub mod merge;
 pub mod power_mult;
+pub mod split;
 mod update;
 
 pub const NO_POWER_BACKEND_ID: PowerGridBackendID = PowerGridBackendID(0);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PowerGridBackendID(u32);
 
 #[derive(Debug, Clone)]

@@ -12,6 +12,12 @@ pub struct PowerGridAdditionInfo {
 }
 
 impl Backend {
+    pub(super) fn next_power_grid_id(&self) -> PowerGridBackendID {
+        let next_id = self.power_grids.next_push_index();
+
+        PowerGridBackendID(next_id.try_into().expect("More than u32::MAX power grids"))
+    }
+
     pub fn add_power_grid(
         &mut self,
         info: &PowerGridAdditionInfo,

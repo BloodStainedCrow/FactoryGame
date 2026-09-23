@@ -6,7 +6,7 @@ use crate::{
     power_grid::{PowerGridBackendID, SingleRecipeAssemblerInfo},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AssemblerBackendID(pub(super) usize);
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ pub struct AssemblerAdditionInfo {
     // TODO: Stats
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FullAssemblerIdentifier {
     pub recipe: Recipe,
     pub grid: PowerGridBackendID,
@@ -92,6 +92,24 @@ impl Backend {
         let data = self.remove_assembler_internal(assembler);
 
         self.add_assembler_internal(assembler.recipe, new_grid, data)
+    }
+
+    pub(super) fn move_assembler_internal(
+        &mut self,
+        assembler: FullAssemblerIdentifier,
+        new_grid: PowerGridBackendID,
+    ) -> (
+        AssemblerMiddleID,
+        AdditionResult<AssemblerMiddleID, AssemblerBackendID>,
+    ) {
+        let data = self.remove_assembler_internal(assembler);
+
+        let middle = data.middle;
+
+        (
+            middle,
+            self.add_assembler_internal(assembler.recipe, new_grid, data),
+        )
     }
 
     pub const fn get_assembler_state(&self) {}

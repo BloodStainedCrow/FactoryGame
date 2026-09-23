@@ -9,6 +9,7 @@ use crate::{
         PowerGridBackendID,
         inserter::conn::{BackendInserterConnection, InserterConnection},
     },
+    transport_lines::{BeltLenType, TransportLineBackendID},
 };
 
 pub mod conn;
@@ -104,6 +105,22 @@ impl Backend {
         self.add_inserter_internal(new_grid, &kind, state)
     }
 
+    pub(super) fn move_inserter_into_new_grid_internal(
+        &mut self,
+        inserter: FullInserterIdentifier,
+        new_grid: PowerGridBackendID,
+    ) -> (
+        InserterMiddleID,
+        AdditionResult<InserterMiddleID, InserterBackendID>,
+    ) {
+        let (state, kind) = self.remove_inserter_internal(inserter);
+
+        (
+            state.middle_id,
+            self.add_inserter_internal(new_grid, &kind, state),
+        )
+    }
+
     #[must_use]
     pub fn get_inserter_state(&self, inserter: FullInserterIdentifier) -> InserterRenderState {
         let grid = &self.power_grids[inserter.grid.0 as usize];
@@ -133,6 +150,29 @@ pub enum InserterKind {
     EmptyInserter {},
 
     OneToOneSingleItem {
+        item: Item,
+        source: u32,
+        dest: u32,
+        movetime: u16,
+    },
+
+    SushiToSushiSingleItem {
+        item: Item,
+        source: TransportLineBackendID,
+        source_pos: BeltLenType,
+        dest: TransportLineBackendID,
+        dest_pos: BeltLenType,
+        movetime: u16,
+    },
+
+    PureBeltToOneSingleItem {
+        item: Item,
+        source: u32,
+        dest: u32,
+        movetime: u16,
+    },
+
+    OneToPureBeltSingleItem {
         item: Item,
         source: u32,
         dest: u32,
@@ -206,6 +246,23 @@ impl InserterKind {
                         InserterConnection::SushiChest { .. },
                         Some(InserterConnection::SushiChest { .. }),
                     ) => todo!(),
+                    (
+                        InserterConnection::SushiBelt {
+                            id: source,
+                            pos: source_pos,
+                        },
+                        Some(InserterConnection::SushiBelt {
+                            id: dest,
+                            pos: dest_pos,
+                        }),
+                    ) => Self::SushiToSushiSingleItem {
+                        item,
+                        source: *source,
+                        source_pos: *source_pos,
+                        dest,
+                        dest_pos,
+                        movetime,
+                    },
                     (InserterConnection::SushiBelt { .. }, _) => todo!("Support belt inserters"),
                     (_, Some(InserterConnection::SushiBelt { .. })) => {
                         todo!("Support belt inserters")
