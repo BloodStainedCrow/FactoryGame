@@ -78,15 +78,12 @@ impl Default for GameState {
         dbg!(start.elapsed());
         let start_remove = Instant::now();
 
-        let mut i = 0;
         for pos in positions {
             ret.apply_action(&ActionKind::RemoveBuilding {
                 surface_id: SurfaceId::default(),
                 position: pos,
             })
             .expect("Failed to remove building");
-            dbg!(i);
-            i += 1;
         }
 
         dbg!(start_remove.elapsed());

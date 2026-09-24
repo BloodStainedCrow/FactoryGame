@@ -12,6 +12,7 @@ static_assertions = "1.1.0"
 middle_indices = { path = "../middle_indices" }
 serde = { version = "1.0.229", features = ["derive"] }
 rayon = "1.12.0"
+indexmap = "2.14.2"
 
 [dev-dependencies]
 proptest = "1.11.0"

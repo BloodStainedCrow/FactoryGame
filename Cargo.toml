@@ -17,7 +17,7 @@ legacy_numeric_constants = "deny"
 
 
 [profile.release]
-lto = true
+# lto = true
 
 [profile.release-with-debug]
 inherits = "release"

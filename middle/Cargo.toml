@@ -15,6 +15,7 @@ entity_info = { path = "../entity_info" }
 static_assertions = "1.1.0"
 enum-map = { version = "3.1.0", features = ["derive"] }
 pathfinding = "4.16.0"
+indexmap = "2.14.2"
 
 [dev-dependencies]
 proptest = "1.11.0"

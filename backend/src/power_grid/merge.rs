@@ -5,6 +5,7 @@ use crate::{
     power_grid::{PowerGridBackendID, assembler::AssemblerBackendID, inserter::InserterBackendID},
 };
 
+#[must_use]
 pub struct PowerGridMergeResult {
     pub kept_id: PowerGridBackendID,
     pub assemblers_which_are_now_in_this_grid:

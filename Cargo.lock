@@ -590,6 +590,7 @@ version = "0.1.0"
 dependencies = [
  "bitvec",
  "data",
+ "indexmap",
  "itertools 0.14.0",
  "middle_indices",
  "proptest",
@@ -2540,6 +2541,7 @@ dependencies = [
  "data",
  "entity_info",
  "enum-map 3.1.0",
+ "indexmap",
  "itertools 0.14.0",
  "log",
  "middle_indices",
