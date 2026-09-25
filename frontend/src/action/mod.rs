@@ -8,7 +8,7 @@ use data::{
         inserter::InserterTy,
         power_pole::PowerPoleTy,
     },
-    spacial::{Flipped, NonSnappingPosition, Position, Rotation},
+    spacial::{Flipped, NonSnappingPosition, Offset, Position, Rotation},
 };
 use thiserror::Error;
 use world::surface::{PlaceEntityError, RemoveEntityError};
@@ -49,6 +49,41 @@ impl ActionKind {
         match self {
             Self::PlaceBuilding { building_info, .. } => Some(building_info.position),
             _ => None,
+        }
+    }
+
+    pub fn offset_by(self, offset: Offset) -> Self {
+        match self {
+            Self::PlaceBuilding {
+                ghost,
+                force,
+                building_info:
+                    BuildingInfo {
+                        position,
+                        rotation,
+                        flipped,
+                        kind,
+                    },
+            } => Self::PlaceBuilding {
+                ghost,
+                force,
+                building_info: BuildingInfo {
+                    position: position + offset,
+                    rotation,
+                    flipped,
+                    kind,
+                },
+            },
+            Self::RemoveBuilding {
+                surface_id,
+                position,
+            } => Self::RemoveBuilding {
+                surface_id,
+                position: position + offset,
+            },
+            Self::SetPlayerPos { .. } => self,
+            Self::AddResearchToQueue { .. } => self,
+            Self::RemoveResearchFromQueue { .. } => self,
         }
     }
 }

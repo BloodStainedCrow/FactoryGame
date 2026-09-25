@@ -68,7 +68,7 @@ fn check_orders(
                 positions.push(pos);
             }
 
-            if state.apply_action(action).is_ok() != expect_accepted {
+            if state.apply_action(&action).is_ok() != expect_accepted {
                 return Err(TestCaseError::fail(format!(
                     "actions in order {order:?} were rejected"
                 )));
@@ -129,14 +129,14 @@ fn should_not_be_applicable_to_modset(
 
 fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
     let blueprint = parse_blueprint(path, contents)?;
-    let actions: Vec<_> = blueprint.get_actions().cloned().collect();
+    let actions: Vec<_> = blueprint.get_actions().collect();
 
     check_orders(path, &actions, true)
 }
 
 fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
     let blueprint = parse_blueprint(path, contents)?;
-    let actions: Vec<_> = blueprint.get_actions().cloned().collect();
+    let actions: Vec<_> = blueprint.get_actions().collect();
 
     check_orders(path, &actions, false)
 }

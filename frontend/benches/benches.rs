@@ -42,7 +42,7 @@ fn criterion_benchmark(c: &mut Criterion) {
             |mut game_state| {
                 for action in bp.get_actions() {
                     game_state
-                        .apply_action(action)
+                        .apply_action(&action)
                         .expect("Failed to apply megabase action");
                 }
             },

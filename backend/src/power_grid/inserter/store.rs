@@ -157,11 +157,11 @@ impl InserterStore {
         relocation
     }
 
-    pub(crate) fn split<'a>(
+    pub(crate) fn split(
         &mut self,
         old_grid_id: PowerGridBackendID,
         new_count: usize,
-        inserter_map: &HashMap<FullInserterIdentifier<'a>, u8>,
+        inserter_map: &HashMap<FullInserterIdentifier<'_>, u8>,
         grid_id_map: &[PowerGridBackendID],
     ) -> ! {
         todo!()

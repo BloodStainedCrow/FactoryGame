@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use data::spacial::{BoundingBox, Extent, Position};
+use data::spacial::{BoundingBox, Extent, Offset, Position};
 use world::surface::{Surface, SurfaceCreationOptions};
 
 use crate::blueprint::{Blueprint, string::BlueprintString};
@@ -43,7 +43,7 @@ impl Default for GameState {
                 generated_area: BoundingBox::new(
                     Position { x: 0, y: 0 },
                     Extent {
-                        width: 5_000,
+                        width: 45_000,
                         height: 10_000,
                     },
                 ),
@@ -68,12 +68,18 @@ impl Default for GameState {
 
         let start = Instant::now();
         let mut positions = vec![];
-        for action in bp.get_actions() {
-            if let Some(pos) = action.get_building_position() {
-                positions.push(pos);
+
+        for x_offs in (0..40_000).step_by(5_000) {
+            for action in bp
+                .get_actions()
+                .map(|a| a.offset_by(Offset { x_offs, y_offs: 0 }))
+            {
+                if let Some(pos) = action.get_building_position() {
+                    positions.push(pos);
+                }
+                ret.apply_action(&action)
+                    .unwrap_or_else(|e| panic!("Failed to apply action {action:?}. Error: {e}"));
             }
-            ret.apply_action(action)
-                .unwrap_or_else(|_| panic!("Failed to apply action {:?}", action));
         }
         dbg!(start.elapsed());
         let start_remove = Instant::now();

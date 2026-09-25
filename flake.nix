@@ -101,6 +101,7 @@
         samply
         bacon
         mangohud
+        heaptrack
 
         cargo-llvm-cov
 

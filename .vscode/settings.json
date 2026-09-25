@@ -40,5 +40,9 @@
         "editor.formatOnSave": true
     },
     "rust-analyzer.assist.preferSelf": true,
-    "rust-analyzer.check.workspace": true
+    "rust-analyzer.check.workspace": true,
+    "search.exclude": {
+        "**/proptest-regressions/blueprint_tests/**": true,
+        "**/test_blueprints/fuzzing/**": true
+    }
 }

@@ -68,31 +68,34 @@ impl TryFrom<&BlueprintString> for CurrentBlueprint {
 }
 
 impl CurrentBlueprint {
-    pub fn get_actions(&self) -> impl Iterator<Item = &ActionKind> {
-        self.actions.iter().sorted_unstable_by(|a, b| match (a, b) {
-            (
-                ActionKind::PlaceBuilding {
-                    building_info: a, ..
+    pub fn get_actions(&self) -> impl Iterator<Item = ActionKind> {
+        self.actions
+            .iter()
+            .sorted_unstable_by(|a, b| match (a, b) {
+                (
+                    ActionKind::PlaceBuilding {
+                        building_info: a, ..
+                    },
+                    ActionKind::PlaceBuilding {
+                        building_info: b, ..
+                    },
+                ) => match (&a.kind, &b.kind) {
+                    (action::BuildingKind::PowerPole { .. }, _) => Less,
+                    (_, action::BuildingKind::PowerPole { .. }) => Greater,
+                    (action::BuildingKind::Inserter { .. }, _) => Greater,
+                    (_, action::BuildingKind::Inserter { .. }) => Less,
+                    (_, _) => Equal,
                 },
-                ActionKind::PlaceBuilding {
-                    building_info: b, ..
-                },
-            ) => match (&a.kind, &b.kind) {
-                (action::BuildingKind::PowerPole { .. }, _) => Less,
-                (_, action::BuildingKind::PowerPole { .. }) => Greater,
-                (action::BuildingKind::Inserter { .. }, _) => Greater,
-                (_, action::BuildingKind::Inserter { .. }) => Less,
+                (_, ActionKind::PlaceBuilding { .. }) => Greater,
+                (ActionKind::PlaceBuilding { .. }, _) => Less,
                 (_, _) => Equal,
-            },
-            (_, ActionKind::PlaceBuilding { .. }) => Greater,
-            (ActionKind::PlaceBuilding { .. }, _) => Less,
-            (_, _) => Equal,
-        })
+            })
+            .cloned()
     }
 
     pub fn apply_to(&self, state: &mut GameState) -> Result<(), ApplyActionError> {
         for action in self.get_actions() {
-            state.apply_action(action)?;
+            state.apply_action(&action)?;
         }
 
         Ok(())
