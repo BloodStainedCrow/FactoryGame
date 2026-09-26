@@ -157,6 +157,7 @@ impl InserterStore {
         relocation
     }
 
+    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(crate) fn split(
         &mut self,
         old_grid_id: PowerGridBackendID,

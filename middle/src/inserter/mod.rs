@@ -4,7 +4,7 @@ use backend::{
     Backend,
     power_grid::inserter::{FullInserterIdentifier, InserterBackendID},
 };
-use data::item::item_set::ItemSet;
+use data::item::item_set::{ItemSet, LimitedItemSet};
 use itertools::Itertools;
 use middle_indices::{InserterMiddleID, PowerGridMiddleID};
 
@@ -27,7 +27,7 @@ pub(crate) struct InserterInfo {
     pub(crate) inferred_items: ItemSet,
     pub(crate) movetime: u16,
 
-    pub(crate) user_filter: ItemSet,
+    pub(crate) user_filter: LimitedItemSet,
 }
 
 #[derive(Debug)]
@@ -36,7 +36,7 @@ pub struct InserterAdditionInfo {
 
     pub sources: Vec<Conn>,
     pub dest: Option<Conn>,
-    pub item_filter: ItemSet,
+    pub item_filter: LimitedItemSet,
     pub movetime: u16,
 }
 

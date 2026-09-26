@@ -40,7 +40,7 @@ impl Backend {
         self.add_chest_internal(info.items, SushiChest::new(info.num_slots).into())
     }
 
-    #[expect(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
+    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(crate) fn change_chest_items(
         &mut self,
         _chest: FullChestIdentifier,

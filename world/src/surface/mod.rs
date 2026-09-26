@@ -11,7 +11,7 @@ use data::{
         inserter::{InserterTy, get_input_position, get_output_position},
         power_pole::{PowerPoleTy, power_pole_supply_area, power_pole_wire_connection_area},
     },
-    item::item_set::ItemSet,
+    item::item_set::LimitedItemSet,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
 };
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
@@ -280,7 +280,7 @@ impl Surface {
                 power_grid_id,
                 sources: source_conn,
                 dest: dest_conn,
-                item_filter: ItemSet::all(),
+                item_filter: LimitedItemSet::All,
                 // TODO:
                 movetime: 100,
             },
@@ -305,29 +305,36 @@ impl Surface {
     pub fn add_belt(
         &mut self,
         ty: BeltTy,
-        top_left: Position,
+        position: Position,
         rotation: Rotation,
         flipped: Flipped,
     ) -> Result<(), PlaceEntityError> {
-        log::trace!("Add belt with ty {ty:?} at {top_left:?}");
-        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+        log::trace!("Add belt with ty {ty:?} at {position:?}");
+        let _bounding_box = self.follows_rules(ty.into(), position, rotation, flipped)?;
 
         // Placement is allowed. Do the placing
 
+        let front_merge = self.get_front_merge_belt(ty, position, rotation, flipped);
+        let back_merge = self.get_back_belt_merge(ty, position, rotation, flipped);
+
         let middle_belt_tile_id = self.middle.add_belt_tile(
             &BeltTileAdditionInfo {
+                // TODO: Length adjustable?
                 length: 4,
+                front_merge,
+                back_merge,
                 // TODO:
-                front_merge: None,
-                back_merge: None,
                 left_sideload_source: None,
                 right_sideload_source: None,
+
+                // TODO
+                attached_inserters: vec![],
             },
             &mut self.backend,
         );
 
         self.world.add_entity(EntityDescriptor {
-            position: top_left,
+            position,
             rotation,
             flipped,
             ty: ty.into(),

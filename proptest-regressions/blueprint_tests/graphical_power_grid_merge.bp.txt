@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 2ad749a7cafc15f9f967e7945e0b874c15272bab22d32614715d5333a980391c # shrinks to ([0, 1, 2, 3, 4], [0, 1, 2, 3, 4])
 cc 961da5491e5564d954aa9b65693fae7a6c1d185c5568e18bcca52b7c1727e346 # shrinks to ([2, 3, 0, 4, 1], [0, 1, 2, 3, 4])
+cc 1ea07c5fe742937e37d82a0f6a4e95f74e79a8a1c8faf4f8ac8cc49a5774ae33 # shrinks to ([4, 1, 2, 0, 3], [0, 1, 2, 3, 4])

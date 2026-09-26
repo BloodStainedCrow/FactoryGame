@@ -1342,8 +1342,6 @@ impl Layer {
         }
     }
 
-    // TODO:
-    #[expect(clippy::float_cmp)]
     pub fn extend(&mut self, other: Self) {
         assert_eq!(self.x_mult, other.x_mult);
         assert_eq!(self.y_mult, other.y_mult);

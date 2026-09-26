@@ -432,6 +432,14 @@ impl Offset {
             },
         }
     }
+
+    #[must_use]
+    pub const fn north() -> Self {
+        Self {
+            x_offs: 0,
+            y_offs: -1,
+        }
+    }
 }
 
 impl Add<Offset> for Position {

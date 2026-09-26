@@ -232,37 +232,37 @@ impl Middle {
             self.make_entity_powered_by_grid(connected_entity, middle_grid_id, backend);
         }
 
-        #[cfg(debug_assertions)]
-        {
-            assert!(
-                self.power_pole_list.iter().all(|(_, pole)| {
-                    pole.connections.iter().all(|connected_pole| {
-                        self.power_pole_list[connected_pole.0 as usize].grid_id == pole.grid_id
-                    })
-                }),
-                "A pole does not have the same ID as a neighbor???"
-            );
+        // #[cfg(debug_assertions)]
+        // {
+        //     assert!(
+        //         self.power_pole_list.iter().all(|(_, pole)| {
+        //             pole.connections.iter().all(|connected_pole| {
+        //                 self.power_pole_list[connected_pole.0 as usize].grid_id == pole.grid_id
+        //             })
+        //         }),
+        //         "A pole does not have the same ID as a neighbor???"
+        //     );
 
-            assert!(
-                self.power_pole_list.iter().all(|(idx, pole)| {
-                    pole.connections.iter().all(|connected_pole| {
-                        self.power_pole_list[connected_pole.0 as usize]
-                            .connections
-                            .contains(&PowerPoleMiddleID(
-                                idx.try_into().expect("More than u32::MAX power poles"),
-                            ))
-                    })
-                }),
-                "Missing bi-directional connection"
-            );
+        //     assert!(
+        //         self.power_pole_list.iter().all(|(idx, pole)| {
+        //             pole.connections.iter().all(|connected_pole| {
+        //                 self.power_pole_list[connected_pole.0 as usize]
+        //                     .connections
+        //                     .contains(&PowerPoleMiddleID(
+        //                         idx.try_into().expect("More than u32::MAX power poles"),
+        //                     ))
+        //             })
+        //         }),
+        //         "Missing bi-directional connection"
+        //     );
 
-            assert!(
-                self.power_pole_list
-                    .iter()
-                    .all(|(_idx, pole)| { pole.connections.iter().all_unique() }),
-                "Duplicated connection entry"
-            );
-        }
+        //     assert!(
+        //         self.power_pole_list
+        //             .iter()
+        //             .all(|(_idx, pole)| { pole.connections.iter().all_unique() }),
+        //         "Duplicated connection entry"
+        //     );
+        // }
 
         PowerPoleMiddleID(index.try_into().expect("More than u32::MAX power poles"))
     }

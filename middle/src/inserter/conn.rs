@@ -76,7 +76,6 @@ impl Middle {
             Conn::BeltTile { id } => {
                 let BeltTileInfo {
                     transport_line,
-                    connected_inserters: _,
                     belt_pos,
                 } = &self.belt_tile_list[id.0 as usize];
 
@@ -85,6 +84,7 @@ impl Middle {
                     backend_id,
                     inferred_items,
                     connected_tiles: _,
+                    connected_inserters: _,
                 } = &self.transport_line_list[transport_line.0 as usize];
 
                 BackendInserterConnection::TransportLine {
@@ -340,9 +340,9 @@ impl Middle {
             },
             Container::TransportLine { id } => Either::Right(
                 self.transport_line_list[id.0 as usize]
-                    .connected_tiles
+                    .connected_inserters
                     .iter()
-                    .flat_map(|tile| &self.belt_tile_list[tile.0 as usize].connected_inserters),
+                    .map(|(_tile, inserter)| inserter),
             ),
         };
 

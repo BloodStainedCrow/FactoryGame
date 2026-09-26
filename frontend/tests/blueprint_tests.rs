@@ -53,17 +53,15 @@ fn check_orders(
 
     let result = runner.run(&strategy, |(order, destroy_order)| {
         let mut state = fresh_game_state();
-        let reordered = Blueprint::from(
-            order
-                .iter()
-                .map(|&index| actions[index].clone())
-                .collect::<Vec<_>>(),
-        );
+        let reordered = order
+            .iter()
+            .map(|&index| actions[index].clone())
+            .collect::<Vec<_>>();
 
         let mut found_rejection = false;
 
         let mut positions = vec![];
-        for action in reordered.get_actions() {
+        for action in reordered {
             if let Some(pos) = action.get_building_position() {
                 positions.push(pos);
             }

@@ -1,5 +1,14 @@
-use data::spacial::Rotation;
+use data::{
+    entity::belt::BeltTy,
+    spacial::{Flipped, Offset, Position, Rotation},
+};
+use entity_info::EntityDescriptorKind;
 use enum_map::EnumMap;
+use itertools::Either;
+use middle::belt::SplitterSide;
+use middle_indices::{BeltTileMiddleID, SplitterMiddleID};
+
+use crate::surface::Surface;
 
 struct BeltStateInfo {
     slf: BeltInfo,
@@ -15,6 +24,90 @@ struct BeltInfo {
 enum BeltResult {
     SideloadToSelf,
     ConnectToFront,
+}
+
+impl Surface {
+    pub(crate) fn get_front_merge_belt(
+        &self,
+        _ty: BeltTy,
+        position: Position,
+        rotation: Rotation,
+        _flipped: Flipped,
+    ) -> Option<Either<BeltTileMiddleID, (SplitterMiddleID, SplitterSide)>> {
+        let front_offset = Offset::north().rotate(rotation);
+
+        let front_tile = position + front_offset;
+
+        let entity = self.get_entity_at(front_tile)?;
+
+        match entity.kind {
+            EntityDescriptorKind::Belt { id } => {
+                // FIXME: Make sure the front belt tile is rotated correctly and that sideloading rules are correct
+                Some(Either::Left(id))
+            },
+
+            _ => None,
+        }
+    }
+
+    pub(crate) fn get_back_belt_merge(
+        &self,
+        _ty: BeltTy,
+        position: Position,
+        rotation: Rotation,
+        _flipped: Flipped,
+    ) -> Option<Either<BeltTileMiddleID, (SplitterMiddleID, SplitterSide)>> {
+        let back_offset = Offset::north().rotate(Rotation::South).rotate(rotation);
+
+        let back_tile = position + back_offset;
+
+        let entity = self.get_entity_at(back_tile)?;
+
+        match entity.kind {
+            EntityDescriptorKind::Belt { id } => {
+                // FIXME: Make sure the back belt tile is rotated correctly
+                Some(Either::Left(id))
+            },
+
+            _ => {
+                // Look to the sides
+                let left_offset = Offset::north().rotate(Rotation::East).rotate(rotation);
+                let right_offset = Offset::north().rotate(Rotation::West).rotate(rotation);
+
+                let left_entity = self
+                    .get_entity_at(position + left_offset)
+                    .map(|e| match e.kind {
+                        EntityDescriptorKind::Belt { id } => {
+                            // FIXME: Make sure the back belt tile is rotated correctly
+                            Some(Either::Left(id))
+                        },
+
+                        _ => None,
+                    })
+                    .flatten();
+                let right_entity = self
+                    .get_entity_at(position + right_offset)
+                    .map(|e| match e.kind {
+                        EntityDescriptorKind::Belt { id } => {
+                            // FIXME: Make sure the back belt tile is rotated correctly
+                            Some(Either::Left(id))
+                        },
+
+                        _ => None,
+                    })
+                    .flatten();
+
+                match (left_entity, right_entity) {
+                    (None, None) => None,
+                    (None, Some(v)) => Some(v),
+                    (Some(v), None) => Some(v),
+                    (Some(_), Some(_)) => {
+                        todo!("Sideload")
+                    },
+                }
+            },
+        }
+    }
 }
 
 // TODO: This needs some tests

@@ -1,11 +1,11 @@
 use backend::{Backend, transport_lines::BeltLenType};
 use itertools::Either;
-use middle_indices::{BeltTileMiddleID, InserterMiddleID, SplitterMiddleID, TransportLineMiddleID};
+use middle_indices::{BeltTileMiddleID, SplitterMiddleID, TransportLineMiddleID};
 
 use crate::{
     Middle,
     belt::{
-        splitter::{SplitterEnd, SplitterSide},
+        splitter::SplitterEnd,
         transport_lines::{TransportLineAdditionInfo, TransportLineEnd},
     },
 };
@@ -14,11 +14,12 @@ mod splitter;
 mod transport_lines;
 
 pub(crate) use splitter::SplitterInfo;
+pub use splitter::SplitterSide;
 pub(crate) use transport_lines::TransportLineInfo;
 
 pub type BeltConnection = Either<BeltTileMiddleID, (SplitterMiddleID, SplitterSide)>;
 
-pub trait GetID: Copy {
+trait GetID: Copy {
     fn get_id(self, middle: &Middle, end: SplitterEnd) -> BeltTileMiddleID;
 }
 
@@ -42,12 +43,13 @@ pub struct BeltTileAdditionInfo {
 
     pub left_sideload_source: Option<BeltConnection>,
     pub right_sideload_source: Option<BeltConnection>,
+
+    pub attached_inserters: Vec<!>,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct BeltTileInfo {
     pub transport_line: TransportLineMiddleID,
-    pub connected_inserters: Vec<InserterMiddleID>,
     pub belt_pos: BeltLenType,
 }
 
@@ -64,6 +66,7 @@ impl Middle {
             back_merge,
             left_sideload_source,
             right_sideload_source,
+            attached_inserters,
         } = info;
 
         let front_merge = front_merge.map(|v| v.get_id(self, SplitterEnd::Back));
@@ -81,10 +84,15 @@ impl Middle {
 
                 let old_length = self.get_transport_line_length(transport_line);
 
-                self.extent_transport_line(
+                self.extend_transport_line(
                     transport_line,
                     TransportLineEnd::Back,
                     *length,
+                    [BeltTileMiddleID(
+                        next_index
+                            .try_into()
+                            .expect("More than u32::MAX belt tiles"),
+                    )],
                     backend,
                 );
 
@@ -99,10 +107,15 @@ impl Middle {
                 (None, Some(back_belt)) => {
                     let transport_line = self.belt_tile_list[back_belt.0 as usize].transport_line;
 
-                    self.extent_transport_line(
+                    self.extend_transport_line(
                         transport_line,
                         TransportLineEnd::Front,
                         *length,
+                        [BeltTileMiddleID(
+                            next_index
+                                .try_into()
+                                .expect("More than u32::MAX belt tiles"),
+                        )],
                         backend,
                     );
 
@@ -112,7 +125,7 @@ impl Middle {
                 (Some((front, front_len)), Some(back_belt)) => {
                     let back = self.belt_tile_list[back_belt.0 as usize].transport_line;
 
-                    let merged = self.merge_transport_lines(front, back, backend);
+                    let merged = self.merge_transport_lines(front, back, [], backend);
 
                     Some((merged, front_len))
                 },
@@ -137,9 +150,23 @@ impl Middle {
 
         let index = self.belt_tile_list.push(BeltTileInfo {
             transport_line: final_transport_line,
-            connected_inserters: vec![],
             belt_pos,
         });
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(
+                self.belt_tile_list
+                    .iter()
+                    .filter(|(_, tile)| tile.transport_line == final_transport_line)
+                    .all(
+                        |(idx, _)| self.transport_line_list[final_transport_line.0 as usize]
+                            .connected_tiles
+                            .contains(&BeltTileMiddleID(idx as u32))
+                    ),
+                "{front_merge:?}, {back_merge:?}"
+            );
+        }
 
         assert_eq!(next_index, index);
 

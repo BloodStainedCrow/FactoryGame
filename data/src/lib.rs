@@ -336,7 +336,6 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
 /// The caller is responsible that no reads are currently happening
 /// and that no references to the `DATA_STORE` are currently live.
 /// This is easiest to ensure by stopping any active update loops (by stopping simulations or the running game)
-#[expect(clippy::needless_pass_by_value)]
 // NOTE(BSC): This function may never be called in unit tests, since those are inherently parallel and WILL race!
 #[cfg(not(test))]
 pub unsafe fn set_data(_data_store: DataStore) {

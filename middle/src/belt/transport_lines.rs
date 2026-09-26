@@ -3,7 +3,7 @@ use backend::{
     transport_lines::{BeltLenType, TransportLineBackendID},
 };
 use data::item::item_set::ItemSet;
-use middle_indices::{BeltTileMiddleID, TransportLineMiddleID};
+use middle_indices::{BeltTileMiddleID, InserterMiddleID, TransportLineMiddleID};
 
 use crate::Middle;
 
@@ -14,6 +14,7 @@ pub struct TransportLineInfo {
     pub inferred_items: ItemSet,
 
     pub connected_tiles: Vec<BeltTileMiddleID>,
+    pub connected_inserters: Vec<(BeltTileMiddleID, InserterMiddleID)>,
 }
 
 #[derive(Debug)]
@@ -22,7 +23,7 @@ pub(super) struct TransportLineAdditionInfo {
     pub length: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub(super) enum TransportLineEnd {
     Front,
     Back,
@@ -62,7 +63,25 @@ impl Middle {
             connected_tiles: tiles,
             backend_id,
             inferred_items: ItemSet::empty(),
+            // TODO
+            connected_inserters: vec![],
         });
+
+        // dbg!(index);
+        // let count = dbg!(self.transport_line_list.iter().count());
+        // dbg!(
+        //     self.transport_line_list
+        //         .values()
+        //         .map(|v| v.length)
+        //         .sum::<u32>()
+        // );
+        // dbg!(
+        //     self.transport_line_list
+        //         .values()
+        //         .map(|v| v.length as f64)
+        //         .sum::<f64>()
+        //         / count as f64
+        // );
 
         assert_eq!(next_index, index);
 
@@ -74,34 +93,104 @@ impl Middle {
     }
 
     #[expect(clippy::needless_pass_by_ref_mut)]
-    pub(super) fn extent_transport_line(
+    pub(super) fn extend_transport_line(
         &mut self,
-        _belt: TransportLineMiddleID,
-        _end: TransportLineEnd,
-        _amount: u32,
+        id: TransportLineMiddleID,
+        end: TransportLineEnd,
+        amount: BeltLenType,
+        new_tiles: impl IntoIterator<Item = BeltTileMiddleID>,
         _backend: &mut Backend,
     ) {
-        // let _belt = &mut self.belt_list[belt.0 as usize];
+        let line = &mut self.transport_line_list[id.0 as usize];
 
-        todo!()
+        line.length += amount;
+
+        match end {
+            TransportLineEnd::Front => {
+                for tile in &line.connected_tiles {
+                    self.belt_tile_list[tile.0 as usize].belt_pos += amount;
+                }
+
+                for inserter in &line.connected_inserters {
+                    todo!("Move inserter position")
+                }
+            },
+            TransportLineEnd::Back => {
+                // No need to update belt pos of anything
+            },
+        }
+
+        line.connected_tiles.extend(new_tiles);
+
+        // FIXME: Apply backend changes
     }
 
     #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn merge_transport_lines(
         &mut self,
-        _front: TransportLineMiddleID,
-        _back: TransportLineMiddleID,
+        front: TransportLineMiddleID,
+        back: TransportLineMiddleID,
+        new_tiles: impl IntoIterator<Item = BeltTileMiddleID>,
         _backend: &mut Backend,
     ) -> TransportLineMiddleID {
-        todo!()
+        if front == back {
+            todo!("Make circular")
+        }
+
+        let front_len = self.get_transport_line_length(front);
+
+        let TransportLineInfo {
+            length: _,
+            backend_id,
+            inferred_items,
+            connected_tiles,
+            connected_inserters,
+        } = self
+            .transport_line_list
+            .remove(back.0 as usize)
+            .expect("Tried to merge non existant transport line");
+
+        for tile in &connected_tiles {
+            self.belt_tile_list[tile.0 as usize].transport_line = front;
+            self.belt_tile_list[tile.0 as usize].belt_pos += front_len;
+        }
+
+        for inserter in &connected_inserters {
+            todo!("Move inserter position and change id")
+        }
+
+        self.transport_line_list[front.0 as usize]
+            .connected_tiles
+            .extend(new_tiles);
+
+        self.transport_line_list[front.0 as usize]
+            .connected_tiles
+            .extend(connected_tiles);
+
+        self.transport_line_list[front.0 as usize]
+            .connected_inserters
+            .extend(connected_inserters);
+
+        if self.transport_line_list[front.0 as usize].inferred_items != inferred_items {
+            todo!("Graph updates")
+        }
+
+        // FIXME: Backend merge
+
+        front
     }
 
     #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn remove_transport_line(
         &mut self,
-        _id: TransportLineMiddleID,
-        _backend: &mut Backend,
+        id: TransportLineMiddleID,
+        backend: &mut Backend,
     ) -> TransportLineMiddleID {
+        let middle = self
+            .transport_line_list
+            .remove(id.0 as usize)
+            .expect("Tried to remove non existant transport line");
+
         todo!()
     }
 }

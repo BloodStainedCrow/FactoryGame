@@ -4,6 +4,7 @@ members = ["frontend", "world", "middle", "middle_indices", "data", "backend", "
 
 [workspace.lints.rust]
 unused_imports = "deny"
+unfulfilled_lint_expectations = "deny"
 
 [workspace.lints.clippy]
 enum_glob_use = { level = "deny", priority = -1 }
@@ -26,5 +27,5 @@ strip = false
 lto = false
 
 [profile.release-with-debug-asserts]
-inherits = "release"
+inherits = "release-with-debug"
 debug-assertions = true

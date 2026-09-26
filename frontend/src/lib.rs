@@ -58,39 +58,34 @@ impl Default for GameState {
         ))
         .expect("Failed to import Blueprint");
 
-        // let str: BlueprintString = bp.clone().into();
-
-        // dbg!(&str);
-
-        // let round_trip: Blueprint = (&str).try_into().unwrap();
-
-        // assert_eq!(bp, round_trip);
-
         let start = Instant::now();
         let mut positions = vec![];
 
-        for x_offs in (0..40_000).step_by(5_000) {
-            for action in bp
-                .get_actions()
-                .map(|a| a.offset_by(Offset { x_offs, y_offs: 0 }))
-            {
-                if let Some(pos) = action.get_building_position() {
-                    positions.push(pos);
-                }
-                ret.apply_action(&action)
-                    .unwrap_or_else(|e| panic!("Failed to apply action {action:?}. Error: {e}"));
+        // for x_offs in (0..5_000).step_by(5_000) {
+        for action in bp.get_actions().map(|a| {
+            a.offset_by(Offset {
+                x_offs: 0,
+                y_offs: 0,
+            })
+        }) {
+            if let Some(pos) = action.get_building_position() {
+                positions.push(pos);
             }
+            ret.apply_action(&action)
+                .unwrap_or_else(|e| panic!("Failed to apply action {action:?}. Error: {e}"));
         }
+        // }
         dbg!(start.elapsed());
+        dbg!(positions.len());
         let start_remove = Instant::now();
 
-        for pos in positions {
-            ret.apply_action(&ActionKind::RemoveBuilding {
-                surface_id: SurfaceId::default(),
-                position: pos,
-            })
-            .expect("Failed to remove building");
-        }
+        // for pos in positions {
+        //     ret.apply_action(&ActionKind::RemoveBuilding {
+        //         surface_id: SurfaceId::default(),
+        //         position: pos,
+        //     })
+        //     .expect("Failed to remove building");
+        // }
 
         dbg!(start_remove.elapsed());
 

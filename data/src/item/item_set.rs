@@ -4,10 +4,60 @@ use itertools::Itertools;
 
 use crate::{DATA_STORE, item::Item};
 
+#[derive(Debug, Clone)]
+pub enum LimitedItemSet<const N: usize = 5> {
+    All,
+    Only([Item; N]),
+    None,
+}
+
+impl<const N: usize> From<LimitedItemSet<N>> for ItemSet {
+    fn from(set: LimitedItemSet<N>) -> Self {
+        match set {
+            LimitedItemSet::All => Self::all(),
+            LimitedItemSet::Only(items) => Self {
+                items: items.into_iter().collect(),
+            },
+            LimitedItemSet::None => Self::empty(),
+        }
+    }
+}
+
+impl<const N: usize> ItemSetTrait for LimitedItemSet<N> {
+    fn contains(&self, item: Item) -> bool {
+        match self {
+            Self::All => true,
+            Self::Only(items) => items.contains(&item),
+            Self::None => false,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ItemSet {
     // TODO: This is probably really slow, and really big
     items: BTreeSet<Item>,
+}
+
+pub trait ItemSetTrait {
+    #[must_use]
+    fn contains(&self, item: Item) -> bool;
+    #[must_use]
+    fn is_empty(&self) -> bool;
+}
+
+impl ItemSetTrait for ItemSet {
+    fn contains(&self, item: Item) -> bool {
+        self.items.contains(&item)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
 }
 
 impl ItemSet {
@@ -38,22 +88,17 @@ impl ItemSet {
         self.items.extend(other.iter());
     }
 
-    pub fn intersection(&mut self, other: &Self) {
-        self.items.retain(|item| other.items.contains(item));
+    pub fn intersection(&mut self, other: &impl ItemSetTrait) {
+        self.items.retain(|item| other.contains(*item));
     }
 
-    pub fn difference(&mut self, other: &Self) {
-        self.items.retain(|item| !other.items.contains(item));
+    pub fn difference(&mut self, other: &impl ItemSetTrait) {
+        self.items.retain(|item| !other.contains(*item));
     }
 
     #[must_use]
     pub fn is_subset(smaller: &Self, bigger: &Self) -> bool {
         smaller.items.is_subset(&bigger.items)
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
     }
 
     /// # Errors
