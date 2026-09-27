@@ -2,6 +2,7 @@ use std::num::NonZero;
 
 use data::item::{Item, ItemCountType};
 use itertools::Either;
+use middle_indices::InserterMiddleID;
 use stable_vec::StableVec;
 use static_assertions::const_assert_eq;
 
@@ -26,6 +27,7 @@ pub struct PureOneToOneInserterStore {
     timer: PowerMultTimer,
 
     inserters: StableVec<InserterState>,
+    middle_ids: StableVec<InserterMiddleID>,
 
     incoming_buckets: Bucket<InserterBucketInfo>,
     outgoing_buckets: Bucket<InserterBucketInfo>,
@@ -80,8 +82,12 @@ struct InserterBucketInfo {
 }
 const_assert_eq!(std::mem::size_of::<InserterBucketInfo>(), 16);
 
-pub struct InserterRemovalInfoMoving {}
-pub struct InserterRemovalInfoStatic {}
+pub struct InserterRemovalInfoMoving {
+    pub middle_id: InserterMiddleID,
+}
+pub struct InserterRemovalInfoStatic {
+    pub middle_id: InserterMiddleID,
+}
 
 impl PureOneToOneInserterStore {
     pub fn new(item: Item, movetime: u16) -> Self {
@@ -90,19 +96,38 @@ impl PureOneToOneInserterStore {
             movetime,
             timer: PowerMultTimer(0),
             inserters: vec![].into(),
+            middle_ids: vec![].into(),
             incoming_buckets: Bucket::new(usize::from(movetime)),
             outgoing_buckets: Bucket::new(usize::from(movetime)),
         }
     }
 
-    pub fn add_inserter(&mut self) -> InserterBackendID {
+    pub fn add_inserter(
+        &mut self,
+        source: SingleItemSlotIndex,
+        sink: SingleItemSlotIndex,
+        hand_size: ItemCountType,
+        middle_id: InserterMiddleID,
+    ) -> InserterBackendID {
         let index = self.inserters.push(InserterState {
             #[expect(clippy::cast_possible_truncation)]
             time_updated: self.timer.0 as u16,
             state: Incoming,
         });
 
-        InserterBackendID(index.try_into().expect("More than u32::MAX inserters"))
+        let middle_id_index = self.middle_ids.push(middle_id);
+        assert_eq!(index, middle_id_index);
+
+        let id = InserterBackendID(index.try_into().expect("More than u32::MAX inserters"));
+        self.incoming_buckets.add(InserterBucketInfo {
+            id,
+            source,
+            sink,
+            hand_size,
+            hand_count: 0,
+        });
+
+        id
     }
 
     pub fn remove_inserter(
@@ -110,15 +135,19 @@ impl PureOneToOneInserterStore {
         id: InserterBackendID,
         token_already_removed: bool,
     ) -> Either<InserterRemovalInfoMoving, InserterRemovalInfoStatic> {
+        let state = self.get_state_after_checking_waitlist(id);
         let _inserter = self
             .inserters
             .remove(id.0 as usize)
             .expect("Tried to remove inserter that did not exist");
+        let middle_id = self
+            .middle_ids
+            .remove(id.0 as usize)
+            .expect("Tried to remove inserter that did not exist");
 
         if token_already_removed {
-            Either::Right(InserterRemovalInfoStatic {})
+            Either::Right(InserterRemovalInfoStatic { middle_id })
         } else {
-            let state = self.get_state_after_checking_waitlist(id);
             match state {
                 // TODO: We should be able to calculate the bucket
                 InserterRenderState::FullAndMovingOut(_, _) => {
@@ -127,9 +156,16 @@ impl PureOneToOneInserterStore {
                         .remove_first(|b| b.id == id)
                         .expect("Where else would it be?");
 
-                    Either::Left(InserterRemovalInfoMoving {})
+                    Either::Left(InserterRemovalInfoMoving { middle_id })
                 },
-                InserterRenderState::EmptyAndMovingBack(_) => todo!(),
+                InserterRenderState::EmptyAndMovingBack(_) => {
+                    let _bucket_info = self
+                        .incoming_buckets
+                        .remove_first(|b| b.id == id)
+                        .expect("Where else would it be?");
+
+                    Either::Left(InserterRemovalInfoMoving { middle_id })
+                },
                 _ => unreachable!(),
             }
         }

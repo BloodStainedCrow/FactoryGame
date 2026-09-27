@@ -34,8 +34,8 @@ impl InserterStore {
             },
             InserterKind::OneToOneSingleItem {
                 item,
-                source: _,
-                dest: _,
+                source,
+                dest,
                 movetime: _,
             } => {
                 let item_list = self.pure_to_pure.entry(*item).or_default();
@@ -43,9 +43,8 @@ impl InserterStore {
                     .entry(info.movetime)
                     .or_insert_with(|| PureOneToOneInserterStore::new(*item, info.movetime));
 
-                let id = movetime_list.add_inserter();
-
-                // FIXME: Add this into the waitlist
+                // FIXME: Handsize
+                let id = movetime_list.add_inserter(*source, *dest, 1, info.middle_id);
 
                 id
             },
@@ -106,12 +105,12 @@ impl InserterStore {
                     .remove_inserter(id, false);
 
                 match state {
-                    Either::Left(_moving) => SingleInserterInfo {
-                        middle_id: todo!(),
+                    Either::Left(moving) => SingleInserterInfo {
+                        middle_id: moving.middle_id,
                         movetime: *movetime,
                     },
-                    Either::Right(_waiting) => SingleInserterInfo {
-                        middle_id: todo!(),
+                    Either::Right(unmoving) => SingleInserterInfo {
+                        middle_id: unmoving.middle_id,
                         movetime: *movetime,
                     },
                 }

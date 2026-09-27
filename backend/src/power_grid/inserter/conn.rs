@@ -3,6 +3,7 @@ use data::item::{Item, item_set::ItemSet};
 use crate::{
     chests::FullChestIdentifier,
     power_grid::assembler::FullAssemblerIdentifier,
+    slot_arenas::item_arena::SingleItemSlotIndex,
     transport_lines::{BeltLenType, FullTransportLineIdentifier, TransportLineBackendID},
 };
 
@@ -10,7 +11,7 @@ use crate::{
 pub(super) enum InserterConnection {
     PureChest {
         item: Item,
-        index: u32,
+        index: SingleItemSlotIndex,
     },
     SushiChest {
         index: u32,
@@ -57,7 +58,7 @@ impl BackendInserterConnection<'_> {
                 // TODO: Get the assembler slot index
                 Ok(pure_item) => InserterConnection::PureChest {
                     item: pure_item,
-                    index: u32::MAX,
+                    index: SingleItemSlotIndex::invalid(),
                 },
                 Err(None) => unreachable!(),
                 Err(Some(_)) => todo!("Multiple items"),
@@ -67,7 +68,10 @@ impl BackendInserterConnection<'_> {
             } => items
                 .is_pure()
                 .map_or(InserterConnection::SushiChest { index: id.0 }, |item| {
-                    InserterConnection::PureChest { item, index: id.0 }
+                    InserterConnection::PureChest {
+                        item,
+                        index: SingleItemSlotIndex::for_pure_chest(item, *id),
+                    }
                 }),
             Self::TransportLine {
                 ident: FullTransportLineIdentifier { id, items: _ },

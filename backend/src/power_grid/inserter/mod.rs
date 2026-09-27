@@ -9,6 +9,7 @@ use crate::{
         PowerGridBackendID,
         inserter::conn::{BackendInserterConnection, InserterConnection},
     },
+    slot_arenas::item_arena::SingleItemSlotIndex,
     transport_lines::{BeltLenType, TransportLineBackendID},
 };
 
@@ -151,8 +152,8 @@ pub enum InserterKind {
 
     OneToOneSingleItem {
         item: Item,
-        source: u32,
-        dest: u32,
+        source: SingleItemSlotIndex,
+        dest: SingleItemSlotIndex,
         movetime: u16,
     },
 
