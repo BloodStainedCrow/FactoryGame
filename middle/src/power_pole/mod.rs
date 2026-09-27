@@ -20,24 +20,53 @@ use smallvec::SmallVec;
 
 use crate::{Middle, UNATTACHED_POWER_GRID_ID};
 
+mod invariant;
+
 pub const AUTOMATIC_POLE_CONNECTION_LIMIT: usize = 4;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddlePowerPoleInfo {
     position: Position,
     connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
-    connected_things: SmallVec<[PowerPoleConnectedThing; 2]>,
+    pub(crate) connected_things: SmallVec<[PowerPoleConnectedThing; 2]>,
     grid_id: PowerGridMiddleID,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum PowerPoleConnectedThing {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PowerPoleConnectedThing {
     Assembler(AssemblerMiddleID),
     Inserter(InserterMiddleID),
 }
 
+pub trait GetPoleConn {
+    #[must_use]
+    fn get_pole_connection(&self) -> Option<PowerPoleConnectedThing>;
+}
+
+impl GetPoleConn for EntityDescriptor {
+    fn get_pole_connection(&self) -> Option<PowerPoleConnectedThing> {
+        // TODO: Some kinds might not want to be powered
+        match self.kind {
+            EntityDescriptorKind::Pipe { .. }
+            | EntityDescriptorKind::Belt { .. }
+            | EntityDescriptorKind::PowerPole { .. }
+            | EntityDescriptorKind::Chest { .. } => None,
+            EntityDescriptorKind::Assembler { id } => Some(PowerPoleConnectedThing::Assembler(id)),
+            EntityDescriptorKind::Inserter { id } => Some(PowerPoleConnectedThing::Inserter(id)),
+            EntityDescriptorKind::SolarPanel { .. } => todo!(),
+        }
+    }
+}
+
+// FIXME: This naming is garbage
 #[derive(Debug)]
-pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = EntityDescriptor>> {
+pub struct PowerPoleTransfer {
+    pub entity: EntityDescriptor,
+    pub prev_pole: Option<PowerPoleMiddleID>,
+}
+
+#[derive(Debug)]
+pub struct PowerPoleAdditionInfo<I: IntoIterator<Item = PowerPoleTransfer>> {
     pub position: Position,
     pub connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     pub connected_entities: I,
@@ -49,6 +78,7 @@ pub struct PowerPoleRemovalInfo<I: IntoIterator<Item = EntityPowerPoleTransfer>>
     pub transfers: I,
 }
 
+// FIXME: This naming is garbage
 #[derive(Debug)]
 pub struct EntityPowerPoleTransfer {
     pub entity: EntityDescriptor,
@@ -61,7 +91,7 @@ impl Middle {
     #[must_use]
     pub fn add_power_pole(
         &mut self,
-        info: PowerPoleAdditionInfo<impl IntoIterator<Item = EntityDescriptor>>,
+        info: PowerPoleAdditionInfo<impl IntoIterator<Item = PowerPoleTransfer>>,
         backend: &mut Backend,
     ) -> PowerPoleMiddleID {
         let PowerPoleAdditionInfo {
@@ -211,11 +241,10 @@ impl Middle {
         let connected_entities = connected_entities.into_iter().collect_vec();
         let connected_things = connected_entities
             .iter()
-            .map(|e| match e.kind {
-                EntityDescriptorKind::Assembler { id } => PowerPoleConnectedThing::Assembler(id),
-                EntityDescriptorKind::Inserter { id } => PowerPoleConnectedThing::Inserter(id),
-
-                _ => unreachable!(),
+            .map(|e| {
+                e.entity
+                    .get_pole_connection()
+                    .expect("Entity without power support")
             })
             .collect();
 
@@ -228,8 +257,19 @@ impl Middle {
 
         assert_eq!(index, real_index);
 
-        for connected_entity in connected_entities {
-            self.make_entity_powered_by_grid(connected_entity, middle_grid_id, backend);
+        for transfer in connected_entities {
+            if let Some(old_pole) = transfer.prev_pole {
+                self.power_pole_list[old_pole.0 as usize]
+                    .connected_things
+                    .retain(|v| {
+                        *v != transfer
+                            .entity
+                            .get_pole_connection()
+                            .expect("Entity without power support")
+                    });
+            }
+
+            self.make_entity_powered_by_grid(transfer.entity, middle_grid_id, backend);
         }
 
         // #[cfg(debug_assertions)]
@@ -321,7 +361,7 @@ impl Middle {
         info: PowerPoleRemovalInfo<impl IntoIterator<Item = EntityPowerPoleTransfer>>,
         backend: &mut Backend,
     ) {
-        let pole = &self
+        let pole = self
             .power_pole_list
             .remove(info.id.0 as usize)
             .expect("Tried to remove pole that does not exist");
@@ -342,6 +382,12 @@ impl Middle {
                 self.power_pole_list[pole.0 as usize].grid_id
             });
             self.make_entity_powered_by_grid(transfer.entity, new_grid, backend);
+
+            if let Some(new_pole) = transfer.new_pole {
+                self.power_pole_list[new_pole.0 as usize]
+                    .connected_things
+                    .push(transfer.entity.get_pole_connection().unwrap());
+            }
         }
 
         let grid = &mut self.power_grid_list[pole.grid_id.0 as usize];
@@ -444,6 +490,7 @@ impl Middle {
                         }
 
                         let PowerGridSplitResult {
+                            new_grid_ids,
                             grid_updates,
                             assembler_updates,
                             inserter_updates,
@@ -454,6 +501,14 @@ impl Middle {
                             assemblers,
                             inserters,
                         });
+
+                        for (new_grid, seed_pole) in new_grid_ids.iter().zip(
+                            components
+                                .iter()
+                                .map(|c| c.first().expect("Component with no poles?")),
+                        ) {
+                            self.set_power_pole_grid_id(*seed_pole, *new_grid);
+                        }
 
                         for grid_update in grid_updates {
                             todo!("Handle grid updates");

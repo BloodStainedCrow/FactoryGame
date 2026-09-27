@@ -17,14 +17,14 @@ use data::{
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
 use itertools::Itertools;
 use middle::{
-    Middle, UNATTACHED_POWER_GRID_ID,
+    Middle,
     assembler::{AssemblerAdditionInfo, AssemblerRemovalInfo, InserterTransfer},
     belt::BeltTileAdditionInfo,
     chest::{ChestAdditionInfo, ChestRemovalInfo},
     inserter::{InserterAdditionInfo, conn::Conn},
     power_pole::{
         AUTOMATIC_POLE_CONNECTION_LIMIT, EntityPowerPoleTransfer, PowerPoleAdditionInfo,
-        PowerPoleRemovalInfo,
+        PowerPoleRemovalInfo, PowerPoleTransfer,
     },
 };
 use middle_indices::ChestMiddleID;
@@ -35,6 +35,7 @@ use crate::surface::world::{CanFitError, SurfaceWorld};
 
 mod belt_logic;
 mod inserter_logic;
+mod invariants;
 mod pipe_logic;
 mod power_pole_logic;
 mod world;
@@ -174,7 +175,7 @@ impl Surface {
         recipe: Option<Recipe>,
     ) -> Result<(), PlaceEntityError> {
         log::trace!("Add assembler with ty {ty:?} at {top_left:?}");
-        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+        let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
         let recipe = recipe.unwrap_or_else(|| default_recipe(ty, None));
 
@@ -192,14 +193,11 @@ impl Surface {
         // let power_grid = (todo!("Find grid") as Option<_>).unwrap_or(0);
         // let connected_inserters: Vec<!> = todo!();
 
-        let middle_assembler_id = self.middle.add_assembler(
-            &AssemblerAdditionInfo {
-                recipe,
-                // TODO:
-                power_grid: UNATTACHED_POWER_GRID_ID,
-            },
-            &mut self.backend,
-        );
+        let pole = self.world.get_pole_for_entity_bounding_box(bounding_box);
+
+        let middle_assembler_id = self
+            .middle
+            .add_assembler(&AssemblerAdditionInfo { recipe, pole }, &mut self.backend);
 
         self.world.add_entity(EntityDescriptor {
             position: top_left,
@@ -210,6 +208,8 @@ impl Surface {
                 id: middle_assembler_id,
             },
         });
+
+        self.check_invariants();
 
         Ok(())
     }
@@ -247,6 +247,8 @@ impl Surface {
             },
         });
 
+        self.check_invariants();
+
         Ok(())
     }
 
@@ -260,12 +262,13 @@ impl Surface {
         flipped: Flipped,
     ) -> Result<(), PlaceEntityError> {
         log::trace!("Add inserter with ty {ty:?} at {top_left:?}");
-        let _bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+        let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
 
         // Placement is allowed. Do the placing
 
         // TODO: Get power grid
-        let power_grid_id = UNATTACHED_POWER_GRID_ID;
+
+        let power_pole = self.world.get_pole_for_entity_bounding_box(bounding_box);
 
         let source_pos = get_input_position(ty, top_left, rotation, flipped);
         let dest_pos = get_output_position(ty, top_left, rotation, flipped);
@@ -277,7 +280,7 @@ impl Surface {
 
         let middle_chest_id = self.middle.add_inserter(
             InserterAdditionInfo {
-                power_grid_id,
+                power_pole,
                 sources: source_conn,
                 dest: dest_conn,
                 item_filter: LimitedItemSet::All,
@@ -296,6 +299,8 @@ impl Surface {
                 id: middle_chest_id,
             },
         });
+
+        self.check_invariants();
 
         Ok(())
     }
@@ -342,6 +347,8 @@ impl Surface {
                 id: middle_belt_tile_id,
             },
         });
+
+        self.check_invariants();
 
         Ok(())
     }
@@ -401,7 +408,13 @@ impl Surface {
 
         let connected_entities = self
             .world
-            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped));
+            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped))
+            .map(|entity| PowerPoleTransfer {
+                entity,
+                prev_pole: self
+                    .world
+                    .get_pole_for_entity_bounding_box(entity.bounding_box()),
+            });
 
         let index = self.middle.add_power_pole(
             PowerPoleAdditionInfo {
@@ -420,10 +433,14 @@ impl Surface {
             kind: EntityDescriptorKind::PowerPole { id: index },
         });
 
+        self.check_invariants();
+
         Ok(())
     }
 
     pub fn remove_entity_at(&mut self, position: Position) -> Result<(), RemoveEntityError> {
+        self.check_invariants();
+
         let Some(entity) = self.world.remove_entity_at(position) else {
             return Err(RemoveEntityError::NoEntity(position));
         };
@@ -476,10 +493,15 @@ impl Surface {
                     })
                     .collect_vec();
 
+                let pole = self
+                    .world
+                    .get_pole_for_entity_bounding_box(entity.bounding_box());
+
                 let info = self.middle.remove_assembler(
                     AssemblerRemovalInfo {
                         id,
                         inserter_changes,
+                        pole,
                     },
                     &mut self.backend,
                 );
@@ -574,6 +596,8 @@ impl Surface {
             },
             EntityDescriptorKind::SolarPanel {} => todo!(),
         }
+
+        self.check_invariants();
 
         Ok(())
     }

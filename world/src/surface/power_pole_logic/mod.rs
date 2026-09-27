@@ -1,4 +1,7 @@
-use data::spacial::BoundingBox;
+use data::{
+    entity::power_pole::{power_pole_search_range, power_pole_supply_area},
+    spacial::BoundingBox,
+};
 use entity_info::EntityDescriptor;
 use middle_indices::PowerPoleMiddleID;
 
@@ -19,7 +22,25 @@ impl SurfaceWorld {
         &self,
         entity_bb: BoundingBox,
     ) -> Option<PowerPoleMiddleID> {
-        // FIXME:
-        None
+        self.get_entities_in_area(entity_bb.extend_evenly(power_pole_search_range()))
+            .filter_map(|e| match e.kind {
+                entity_info::EntityDescriptorKind::PowerPole { id } => {
+                    if power_pole_supply_area(
+                        e.ty.try_into().expect("Illegal PowerPoleTy"),
+                        e.position,
+                        e.rotation,
+                        e.flipped,
+                    )
+                    .overlaps(entity_bb)
+                    {
+                        Some(id)
+                    } else {
+                        None
+                    }
+                },
+
+                _ => None,
+            })
+            .next()
     }
 }

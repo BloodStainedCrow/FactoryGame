@@ -3,9 +3,11 @@ use backend::{
     power_grid::assembler::{AssemblerBackendID, FullAssemblerIdentifier},
 };
 use data::{entity::assember::Recipe, item::ItemStack};
-use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID};
+use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID, PowerPoleMiddleID};
 
-use crate::{Middle, inserter::conn::Conn};
+use crate::{
+    Middle, UNATTACHED_POWER_GRID_ID, inserter::conn::Conn, power_pole::PowerPoleConnectedThing,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct MiddleAssemblerInfo {
@@ -21,7 +23,7 @@ pub(crate) struct MiddleAssemblerInfo {
 
 pub struct AssemblerAdditionInfo {
     pub recipe: Recipe,
-    pub power_grid: PowerGridMiddleID,
+    pub pole: Option<PowerPoleMiddleID>,
 }
 
 #[derive(Debug)]
@@ -34,6 +36,7 @@ pub struct InserterTransfer {
 pub struct AssemblerRemovalInfo<I: IntoIterator<Item = InserterTransfer>> {
     pub id: AssemblerMiddleID,
     pub inserter_changes: I,
+    pub pole: Option<PowerPoleMiddleID>,
 }
 
 pub struct AssemblerRemovalResult {
@@ -68,9 +71,15 @@ impl Middle {
     ) -> AssemblerMiddleID {
         let next_index = self.assembler_list.next_push_index();
 
+        let grid = if let Some(pole) = info.pole {
+            self.get_pole_power_grid(pole)
+        } else {
+            UNATTACHED_POWER_GRID_ID
+        };
+
         let backend_id =
             match backend.add_assembler(&backend::power_grid::assembler::AssemblerAdditionInfo {
-                power_grid: self.power_grid_list[info.power_grid.0 as usize].backend_id,
+                power_grid: self.power_grid_list[grid.0 as usize].backend_id,
                 recipe: info.recipe,
                 middle_id: AssemblerMiddleID(
                     next_index
@@ -90,13 +99,21 @@ impl Middle {
 
         let index = self.assembler_list.push(MiddleAssemblerInfo {
             current_recipe: info.recipe,
-            power_grid_id: info.power_grid,
+            power_grid_id: grid,
             backend_id,
         });
 
         assert_eq!(next_index, index);
 
-        AssemblerMiddleID(index.try_into().expect("More than u32::MAX assemblers"))
+        let id = AssemblerMiddleID(index.try_into().expect("More than u32::MAX assemblers"));
+
+        if let Some(pole) = info.pole {
+            self.power_pole_list[pole.0 as usize]
+                .connected_things
+                .push(PowerPoleConnectedThing::Assembler(id));
+        }
+
+        id
     }
 
     pub fn change_assembler_recipe(
@@ -121,6 +138,14 @@ impl Middle {
             .assembler_list
             .remove(info.id.0 as usize)
             .expect("Tried to remove assembler that did not exist");
+
+        if let Some(pole) = info.pole {
+            let things = &mut self.power_pole_list[pole.0 as usize].connected_things;
+            assert!(things.contains(&PowerPoleConnectedThing::Assembler(info.id)));
+            things.retain(|v| *v != PowerPoleConnectedThing::Assembler(info.id));
+        } else {
+            assert!(assembler.power_grid_id == UNATTACHED_POWER_GRID_ID);
+        }
 
         let grid = self.power_grid_list[assembler.power_grid_id.0 as usize].backend_id;
 

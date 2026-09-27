@@ -106,6 +106,11 @@ impl EntityDescriptor {
     }
 
     #[must_use]
+    pub fn bounding_box(&self) -> BoundingBox {
+        bounding_box(self.ty, self.position, self.rotation, self.flipped)
+    }
+
+    #[must_use]
     pub fn overlaps(&self, other: BoundingBox) -> bool {
         bounding_box(self.ty, self.position, self.rotation, self.flipped).overlaps(other)
     }

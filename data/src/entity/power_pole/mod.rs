@@ -65,3 +65,13 @@ pub fn power_pole_supply_area(
     let data = &DATA_STORE.power_poles[usize::from(ty.0)];
     bounding_box(ty.into(), top_left, rotation, flipped).extend_evenly(data.supply_range)
 }
+
+#[must_use]
+pub fn power_pole_search_range() -> u32 {
+    DATA_STORE
+        .power_poles
+        .iter()
+        .map(|pole| pole.supply_range)
+        .max()
+        .expect("No power pole ty exists")
+}

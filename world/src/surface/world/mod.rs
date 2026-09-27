@@ -206,6 +206,14 @@ impl SurfaceWorld {
         .flat_map(|(chunk, base_pos)| chunk.get_entities(base_pos))
         .filter(move |e| e.overlaps(bounding_box))
     }
+
+    pub(super) fn get_all_entities(&self) -> impl Iterator<Item = EntityDescriptor> {
+        self.chunks
+            .occupied_entries()
+            .flat_map(|(base_pos, chunk)| {
+                chunk.get_entities(get_chunk_base_pos_from_indices(base_pos))
+            })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Error)]

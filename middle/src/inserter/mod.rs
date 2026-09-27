@@ -6,11 +6,14 @@ use backend::{
 };
 use data::item::item_set::{ItemSet, LimitedItemSet};
 use itertools::Itertools;
-use middle_indices::{InserterMiddleID, PowerGridMiddleID};
+use middle_indices::{InserterMiddleID, PowerGridMiddleID, PowerPoleMiddleID};
 
 pub mod conn;
 
-use crate::{Middle, assembler::InserterTransfer, inserter::conn::Conn};
+use crate::{
+    Middle, UNATTACHED_POWER_GRID_ID, assembler::InserterTransfer, inserter::conn::Conn,
+    power_pole::PowerPoleConnectedThing,
+};
 
 pub const MAX_CONN_COUNT: usize = 2;
 static_assertions::const_assert!(std::mem::size_of::<Option<Conn>>() <= 8);
@@ -32,7 +35,7 @@ pub(crate) struct InserterInfo {
 
 #[derive(Debug)]
 pub struct InserterAdditionInfo {
-    pub power_grid_id: PowerGridMiddleID,
+    pub power_pole: Option<PowerPoleMiddleID>,
 
     pub sources: Vec<Conn>,
     pub dest: Option<Conn>,
@@ -41,6 +44,11 @@ pub struct InserterAdditionInfo {
 }
 
 impl Middle {
+    #[must_use]
+    pub fn get_inserter_power_grid(&self, id: InserterMiddleID) -> PowerGridMiddleID {
+        self.inserter_list[id.0 as usize].power_grid_id
+    }
+
     pub fn add_inserter(
         &mut self,
         info: InserterAdditionInfo,
@@ -81,9 +89,13 @@ impl Middle {
             }
         }
 
+        let power_grid_id = info.power_pole.map_or(UNATTACHED_POWER_GRID_ID, |pole| {
+            self.get_pole_power_grid(pole)
+        });
+
         let backend_id =
             match backend.add_inserter(&backend::power_grid::inserter::InserterAdditionInfo {
-                power_grid: self.power_grid_list[info.power_grid_id.0 as usize].backend_id,
+                power_grid: self.power_grid_list[power_grid_id.0 as usize].backend_id,
                 middle_id: InserterMiddleID(next_index),
                 source: info
                     .sources
@@ -107,7 +119,7 @@ impl Middle {
             };
 
         let index = self.inserter_list.push(InserterInfo {
-            power_grid_id: info.power_grid_id,
+            power_grid_id,
             backend_id,
 
             sources: info
@@ -126,6 +138,12 @@ impl Middle {
 
             user_filter: info.item_filter,
         });
+
+        if let Some(pole) = info.power_pole {
+            self.power_pole_list[pole.0 as usize].connected_things.push(
+                PowerPoleConnectedThing::Inserter(InserterMiddleID(next_index)),
+            );
+        }
 
         assert_eq!(next_index, index as u32);
 

@@ -55,7 +55,7 @@ pub struct GraphChangesResult {
 impl Backend {
     #[must_use]
     pub fn apply_graph_changes(&mut self, changes: GraphChanges<'_>) -> GraphChangesResult {
-        let _inserters = self.remove_all_inserters(changes.inserter_changes);
+        let inserters = self.remove_all_inserters(changes.inserter_changes);
         let chests = self.remove_all_chests(changes.chest_changes);
         let transport_lines = self.remove_all_transport_lines(changes.transport_line_changes);
 
@@ -70,10 +70,14 @@ impl Backend {
                 .map(|(ident, (state, changes))| (ident, state, changes)),
         );
 
-        // FIXME: Inserter readdition. That required a ton of logic compared to the rest
+        let inserter_updates = self.add_all_inserters(
+            inserters
+                .into_iter()
+                .map(|(ident, (state, changes))| (ident, state, changes)),
+        );
 
         GraphChangesResult {
-            inserter_updates: Vec::new(),
+            inserter_updates: inserter_updates.into_values().collect(),
             chest_updates: chest_updates.into_values().collect(),
             transport_lines_updates: transport_lines_updates.into_values().collect(),
         }

@@ -19,6 +19,7 @@ pub mod assembler;
 pub mod belt;
 pub mod chest;
 pub mod inserter;
+pub mod invariant;
 pub mod pipe;
 pub mod power_grid;
 pub mod power_pole;

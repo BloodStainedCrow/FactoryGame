@@ -39,6 +39,8 @@ impl Backend {
     }
 
     pub fn remove_power_grid(&mut self, id: PowerGridBackendID) {
+        assert_ne!(id, PowerGridBackendID(0), "Tried to remove catchall pg");
+
         // TODO: assert this pg is empty
         self.power_grids.remove(id.0 as usize);
     }
