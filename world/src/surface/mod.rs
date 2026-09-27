@@ -408,7 +408,10 @@ impl Surface {
 
         let connected_entities = self
             .world
-            .get_powered_entites_for_pole(power_pole_supply_area(ty, top_left, rotation, flipped))
+            .get_powered_entites_for_pole(
+                top_left,
+                power_pole_supply_area(ty, top_left, rotation, flipped),
+            )
             .map(|entity| PowerPoleTransfer {
                 entity,
                 prev_pole: self
@@ -514,17 +517,18 @@ impl Surface {
             },
             EntityDescriptorKind::Pipe { id } => todo!(),
             EntityDescriptorKind::PowerPole { id } => {
-                let previously_connected_entities =
-                    self.world
-                        .get_powered_entites_for_pole(power_pole_supply_area(
-                            entity
-                                .ty
-                                .try_into()
-                                .expect("Power Pole with non PowerPoleTy"),
-                            entity.position,
-                            entity.rotation,
-                            entity.flipped,
-                        ));
+                let previously_connected_entities = self.world.get_powered_entites_for_pole(
+                    entity.position,
+                    power_pole_supply_area(
+                        entity
+                            .ty
+                            .try_into()
+                            .expect("Power Pole with non PowerPoleTy"),
+                        entity.position,
+                        entity.rotation,
+                        entity.flipped,
+                    ),
+                );
 
                 let transfers = previously_connected_entities.map(|entity| {
                     let new_pole = self.world.get_pole_for_entity_bounding_box(bounding_box(
