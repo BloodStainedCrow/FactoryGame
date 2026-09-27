@@ -129,9 +129,23 @@ impl DataStore {
                 inputs: recipe
                     .ingredients
                     .keys()
-                    .map(|item| item_to_id[item])
+                    .map(|item| {
+                        *item_to_id.get(item).expect(&format!(
+                            "Unknown item \"{item:?}\". Referenced in ingredients of recipe \"{:?}\"",
+                            &recipe.name
+                        ))
+                    })
                     .collect(),
-                outputs: recipe.results.keys().map(|item| item_to_id[item]).collect(),
+                outputs: recipe
+                    .results
+                    .keys()
+                    .map(|item| {
+                        *item_to_id.get(item).expect(&format!(
+                            "Unknown item \"{item:?}\". Referenced in ingredients of recipe \"{:?}\"",
+                            &recipe.name
+                        ))
+                    })
+                    .collect(),
             })
         }))
         .collect();

@@ -26,4 +26,7 @@ pub struct RecipeInfo {
 
     pub ingredients: HashMap<ItemIdentifier, ItemCountType>,
     pub results: HashMap<ItemIdentifier, ItemCountType>,
+    // TODO: Time
+    // TODO: prod module
+    // TODO: etc
 }

@@ -307,6 +307,22 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                 name: ItemName("iron_plate".into()),
                 stack_size: 100,
             },
+            api::item::ItemInfo {
+                name: ItemName("copper_ore".into()),
+                stack_size: 50,
+            },
+            api::item::ItemInfo {
+                name: ItemName("copper_plate".into()),
+                stack_size: 100,
+            },
+            api::item::ItemInfo {
+                name: ItemName("copper_wire".into()),
+                stack_size: 200,
+            },
+            api::item::ItemInfo {
+                name: ItemName("green_chip".into()),
+                stack_size: 200,
+            },
         ],
         recipes: vec![
             api::recipe::RecipeInfo {
@@ -325,6 +341,53 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
                 )]),
                 results: HashMap::from_iter([(
                     ItemIdentifier::new(&mod_ident, &ItemName("iron_plate".into())),
+                    1,
+                )]),
+            },
+            api::recipe::RecipeInfo {
+                name: RecipeName("generate_copper".into()),
+                ingredients: HashMap::new(),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("copper_ore".into())),
+                    1,
+                )]),
+            },
+            api::recipe::RecipeInfo {
+                name: RecipeName("smelt_copper".into()),
+                ingredients: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("copper_ore".into())),
+                    1,
+                )]),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("copper_plate".into())),
+                    1,
+                )]),
+            },
+            api::recipe::RecipeInfo {
+                name: RecipeName("copper_wire".into()),
+                ingredients: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("copper_plate".into())),
+                    1,
+                )]),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("copper_wire".into())),
+                    2,
+                )]),
+            },
+            api::recipe::RecipeInfo {
+                name: RecipeName("green_chip".into()),
+                ingredients: HashMap::from_iter([
+                    (
+                        ItemIdentifier::new(&mod_ident, &ItemName("copper_wire".into())),
+                        3,
+                    ),
+                    (
+                        ItemIdentifier::new(&mod_ident, &ItemName("iron_plate".into())),
+                        1,
+                    ),
+                ]),
+                results: HashMap::from_iter([(
+                    ItemIdentifier::new(&mod_ident, &ItemName("green_chip".into())),
                     1,
                 )]),
             },
