@@ -1,6 +1,6 @@
 use backend::{
     Backend,
-    transport_lines::{BeltLenType, TransportLineBackendID},
+    transport_lines::{BeltLenType, FullTransportLineIdentifier, TransportLineBackendID},
 };
 use data::item::item_set::ItemSet;
 use middle_indices::{BeltTileMiddleID, InserterMiddleID, TransportLineMiddleID};
@@ -125,16 +125,20 @@ impl Middle {
         // FIXME: Apply backend changes
     }
 
-    #[expect(clippy::needless_pass_by_ref_mut)]
     pub(super) fn merge_transport_lines(
         &mut self,
         front: TransportLineMiddleID,
         back: TransportLineMiddleID,
         new_tiles: impl IntoIterator<Item = BeltTileMiddleID>,
-        _backend: &mut Backend,
+        backend: &mut Backend,
     ) -> TransportLineMiddleID {
         if front == back {
-            todo!("Make circular")
+            let line = &self.transport_line_list[front.0 as usize];
+            backend.make_circular(FullTransportLineIdentifier {
+                id: line.backend_id,
+                items: &line.inferred_items,
+            });
+            return front;
         }
 
         let front_len = self.get_transport_line_length(front);

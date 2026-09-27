@@ -510,7 +510,10 @@ impl Surface {
                 );
             },
             EntityDescriptorKind::Inserter { id } => {
-                let info = self.middle.remove_inserter(id, &mut self.backend);
+                let pole = self
+                    .world
+                    .get_pole_for_entity_bounding_box(entity.bounding_box());
+                let info = self.middle.remove_inserter(id, pole, &mut self.backend);
             },
             EntityDescriptorKind::Belt { id } => {
                 // FIXME:

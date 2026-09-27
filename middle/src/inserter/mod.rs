@@ -44,6 +44,28 @@ pub struct InserterAdditionInfo {
 }
 
 impl Middle {
+    pub(crate) fn get_inserter_identifier(
+        &self,
+        id: InserterMiddleID,
+    ) -> FullInserterIdentifier<'_> {
+        let inserter = &self.inserter_list[id.0 as usize];
+        let grid = self.power_grid_list[inserter.power_grid_id.0 as usize].backend_id;
+
+        let source = inserter
+            .sources
+            .map(|slot| slot.map(|conn| self.get_backend_conn(conn)));
+        let dest = inserter.dest.map(|dest| self.get_backend_conn(dest));
+
+        FullInserterIdentifier {
+            grid,
+            inserter_id: inserter.backend_id,
+            inferred_items: &inserter.inferred_items,
+            source,
+            dest,
+            movetime: inserter.movetime,
+        }
+    }
+
     #[must_use]
     pub fn get_inserter_power_grid(&self, id: InserterMiddleID) -> PowerGridMiddleID {
         self.inserter_list[id.0 as usize].power_grid_id
@@ -150,11 +172,24 @@ impl Middle {
         InserterMiddleID(next_index)
     }
 
-    pub fn remove_inserter(&mut self, id: InserterMiddleID, backend: &mut Backend) {
+    pub fn remove_inserter(
+        &mut self,
+        id: InserterMiddleID,
+        pole: Option<PowerPoleMiddleID>,
+        backend: &mut Backend,
+    ) {
         let info = self
             .inserter_list
             .remove(id.0 as usize)
             .expect("Tried to remove non-existant inserter");
+
+        if let Some(pole) = pole {
+            let things = &mut self.power_pole_list[pole.0 as usize].connected_things;
+            assert!(things.contains(&&PowerPoleConnectedThing::Inserter(id)));
+            things.retain(|v| *v != PowerPoleConnectedThing::Inserter(id));
+        } else {
+            assert!(info.power_grid_id == UNATTACHED_POWER_GRID_ID);
+        }
 
         let grid = self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
 

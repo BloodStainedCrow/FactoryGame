@@ -56,6 +56,10 @@ impl TransportLineStore {
             .remove(ident.id.0 as usize)
             .expect("Tried to remove non-existant transport line")
     }
+
+    fn make_circular(&mut self, ident: FullTransportLineIdentifier) {
+        self.sushi[ident.id.0 as usize].make_circular();
+    }
 }
 
 impl Backend {
@@ -69,6 +73,10 @@ impl Backend {
             new_id: id,
             relocations: vec![],
         }
+    }
+
+    pub fn make_circular(&mut self, ident: FullTransportLineIdentifier) {
+        self.transport_lines.make_circular(ident);
     }
 
     pub(crate) fn add_transport_line_internal(

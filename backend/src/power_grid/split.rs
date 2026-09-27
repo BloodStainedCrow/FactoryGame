@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, iter};
+use std::collections::BTreeMap;
 
 use itertools::Itertools;
 use middle_indices::{AssemblerMiddleID, InserterMiddleID, PowerGridMiddleID};
@@ -13,61 +13,65 @@ use crate::{
     },
 };
 
-pub struct PowerGridSplitInfo<'a, F: FnMut(PowerGridBackendID) -> PowerGridMiddleID> {
+pub struct PowerGridSplitInfo<'a> {
     pub id: PowerGridBackendID,
 
-    pub new_count: usize,
-    pub new_middles: F,
+    /// The middle ids for the new grids, created by the middle *before* the
+    /// split. Must be `new_count` long.
+    pub new_middle_ids: Vec<PowerGridMiddleID>,
     pub assemblers: BTreeMap<FullAssemblerIdentifier, u8>,
     pub inserters: BTreeMap<FullInserterIdentifier<'a>, u8>,
 }
 
 pub struct PowerGridSplitResult {
+    /// The middle ids of all resulting grids, the first being the kept grid.
     pub new_grid_ids: Vec<PowerGridMiddleID>,
+    /// The backend ids of all resulting grids, parallel to `new_grid_ids`.
+    pub new_grid_backend_ids: Vec<PowerGridBackendID>,
     pub grid_updates: Vec<RelocationInfo<PowerGridMiddleID, PowerGridBackendID>>,
     pub assembler_updates: Vec<(AssemblerMiddleID, (PowerGridMiddleID, AssemblerBackendID))>,
     pub inserter_updates: Vec<(InserterMiddleID, (PowerGridMiddleID, InserterBackendID))>,
 }
 
 impl Backend {
-    pub fn split_power_grid(
-        &mut self,
-        mut info: PowerGridSplitInfo<impl FnMut(PowerGridBackendID) -> PowerGridMiddleID>,
-    ) -> PowerGridSplitResult {
+    pub fn split_power_grid(&mut self, mut info: PowerGridSplitInfo<'_>) -> PowerGridSplitResult {
         let mut grid_updates = vec![];
 
-        let new_grid_ids = iter::once(info.id)
-            .chain((0..info.new_count).map(|_| {
-                let middle_id = (info.new_middles)(self.next_power_grid_id());
-                match self.add_power_grid(&PowerGridAdditionInfo { middle_id }) {
-                    crate::AdditionResult::Added {
-                        new_id,
-                        relocations,
-                    } => {
-                        grid_updates.extend(relocations);
-                        new_id
-                    },
-                }
-            }))
+        let mut new_grid_backend_ids = vec![info.id];
+        new_grid_backend_ids.extend(info.new_middle_ids.iter().map(|middle_id| {
+            match self.add_power_grid(&PowerGridAdditionInfo {
+                middle_id: *middle_id,
+            }) {
+                crate::AdditionResult::Added {
+                    new_id,
+                    relocations,
+                } => {
+                    grid_updates.extend(relocations);
+                    new_id
+                },
+            }
+        }));
+
+        let new_grid_middle_ids = new_grid_backend_ids
+            .iter()
+            .map(|id| self.power_grids[id.0 as usize].middle_id)
             .collect_vec();
 
         let assembler_updates = self.split_assemblers(
             info.assemblers
                 .into_iter()
-                .map(|(a, idx)| (a, new_grid_ids[usize::from(idx)])),
+                .map(|(a, idx)| (a, new_grid_backend_ids[usize::from(idx)])),
         );
 
         let inserter_updates = self.split_inserters(
             info.inserters
                 .into_iter()
-                .map(|(a, idx)| (a, new_grid_ids[usize::from(idx)])),
+                .map(|(a, idx)| (a, new_grid_backend_ids[usize::from(idx)])),
         );
 
         PowerGridSplitResult {
-            new_grid_ids: new_grid_ids
-                .into_iter()
-                .map(|id| self.power_grids[id.0 as usize].middle_id)
-                .collect(),
+            new_grid_ids: new_grid_middle_ids,
+            new_grid_backend_ids,
             grid_updates,
             assembler_updates,
             inserter_updates,

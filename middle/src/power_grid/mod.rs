@@ -1,6 +1,8 @@
 use backend::{
     Backend,
-    power_grid::{PowerGridBackendID, PowerGridSize, merge::PowerGridMergeResult},
+    power_grid::{
+        PowerGridBackendID, PowerGridSize, UNLINKED_BACKEND, merge::PowerGridMergeResult,
+    },
 };
 use middle_indices::PowerGridMiddleID;
 
@@ -12,7 +14,7 @@ pub(crate) struct PowerGridInfo {
 }
 
 impl PowerGridInfo {
-    pub const fn set_backend_id(&mut self, new_id: PowerGridBackendID) {
+    pub(crate) fn set_backend_id(&mut self, new_id: PowerGridBackendID) {
         self.backend_id = new_id;
     }
 }
@@ -20,6 +22,14 @@ impl PowerGridInfo {
 impl Middle {
     pub(crate) fn add_power_grid(&mut self, backend_id: PowerGridBackendID) -> PowerGridMiddleID {
         let id = self.power_grid_list.push(PowerGridInfo { backend_id });
+
+        PowerGridMiddleID(id.try_into().expect("More than u32::MAX power grids"))
+    }
+
+    pub(crate) fn add_unlinked_power_grid(&mut self) -> PowerGridMiddleID {
+        let id = self.power_grid_list.push(PowerGridInfo {
+            backend_id: UNLINKED_BACKEND,
+        });
 
         PowerGridMiddleID(id.try_into().expect("More than u32::MAX power grids"))
     }

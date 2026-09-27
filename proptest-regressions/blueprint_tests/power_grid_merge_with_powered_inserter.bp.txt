@@ -7,3 +7,4 @@
 cc 8afeaa65b529be753be4fad03daa0d32d1e6c8b96a6ba994003472439266ab4f # shrinks to ([0, 1, 2, 3], [0, 1, 2, 3])
 cc e84866ea27d729c6b8f6a7ad0b70bad7708c76ce101af40cd40c6561bbb34992 # shrinks to ([1, 0, 2, 3], [2, 3, 0, 1])
 cc ed2068fd1fad8d3492b94de989058f76a518bb1e115b1170e978456d3b0a9fc9 # shrinks to ([3, 1, 2, 0], [0, 1, 2, 3])
+cc cbc558c75e119fb48cab2e8281631bdc8509b9a0e3e0985c9336032dba56fc6a # shrinks to ([2, 3, 0, 1], [1, 3, 2, 0])

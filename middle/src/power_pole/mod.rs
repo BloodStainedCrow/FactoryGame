@@ -421,6 +421,10 @@ impl Middle {
                         components.sort_by_key(|c| -(c.len() as isize));
 
                         let grid = grid.backend_id;
+                        let new_middle_ids: Vec<PowerGridMiddleID> = (0..components.len() - 1)
+                            .map(|_| self.add_unlinked_power_grid())
+                            .collect();
+
                         let (mut assemblers, mut inserters) = (BTreeMap::new(), BTreeMap::new());
                         for (a, b) in components
                             .iter()
@@ -459,30 +463,15 @@ impl Middle {
                                         Either::Right(iter::empty()),
                                     )
                                 },
-                                PowerPoleConnectedThing::Inserter(inserter_middle_id) => {
-                                    let inserter =
-                                        &self.inserter_list[inserter_middle_id.0 as usize];
-                                    let grid = self.power_grid_list
-                                        [inserter.power_grid_id.0 as usize]
-                                        .backend_id;
-
-                                    (
-                                        Either::Right(iter::empty()),
-                                        Either::Left(iter::once((
-                                            FullInserterIdentifier {
-                                                grid,
-                                                inserter_id: inserter.backend_id,
-                                                inferred_items: &inserter.inferred_items,
-                                                source: todo!(),
-                                                dest: todo!(),
-                                                movetime: inserter.movetime,
-                                            },
-                                            comp_index.try_into().expect(
-                                                "Tried to split into more than u8::MAX components",
-                                            ),
-                                        ))),
-                                    )
-                                },
+                                PowerPoleConnectedThing::Inserter(inserter_middle_id) => (
+                                    Either::Right(iter::empty()),
+                                    Either::Left(iter::once((
+                                        self.get_inserter_identifier(*inserter_middle_id),
+                                        comp_index.try_into().expect(
+                                            "Tried to split into more than u8::MAX components",
+                                        ),
+                                    ))),
+                                ),
                             })
                         {
                             assemblers.extend(a);
@@ -491,16 +480,22 @@ impl Middle {
 
                         let PowerGridSplitResult {
                             new_grid_ids,
+                            new_grid_backend_ids,
                             grid_updates,
                             assembler_updates,
                             inserter_updates,
                         } = backend.split_power_grid(PowerGridSplitInfo {
                             id: grid,
-                            new_count: components.len() - 1,
-                            new_middles: |backend_id| self.add_power_grid(backend_id),
+                            new_middle_ids,
                             assemblers,
                             inserters,
                         });
+
+                        for (middle_id, backend_id) in
+                            new_grid_ids.iter().zip(new_grid_backend_ids.iter())
+                        {
+                            self.power_grid_list[middle_id.0 as usize].set_backend_id(*backend_id);
+                        }
 
                         for (new_grid, seed_pole) in new_grid_ids.iter().zip(
                             components

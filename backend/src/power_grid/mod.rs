@@ -14,6 +14,7 @@ pub mod split;
 mod update;
 
 pub const NO_POWER_BACKEND_ID: PowerGridBackendID = PowerGridBackendID(0);
+pub const UNLINKED_BACKEND: PowerGridBackendID = PowerGridBackendID(u32::MAX);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PowerGridBackendID(u32);

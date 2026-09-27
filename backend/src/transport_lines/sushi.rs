@@ -11,10 +11,14 @@ pub struct SushiTransportLine {
 }
 
 impl SushiTransportLine {
-    pub fn new(length: BeltLenType) -> Self {
+    pub(super) fn new(length: BeltLenType) -> Self {
         Self {
             is_circular: false,
             locs: vec![None; length as usize].into(),
         }
+    }
+
+    pub(super) fn make_circular(&mut self) {
+        self.is_circular = true;
     }
 }
