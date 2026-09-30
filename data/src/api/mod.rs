@@ -8,7 +8,7 @@ use crate::{
     api::{
         entity::{
             assembler::AssemblerInfo, belt::BeltInfo, chest::ChestInfo, inserter::InserterInfo,
-            power_pole::PowerPoleInfo,
+            power_pole::PowerPoleInfo, solar_panel::SolarPanelInfo,
         },
         item::ItemInfo,
         recipe::RecipeInfo,
@@ -33,6 +33,7 @@ pub(crate) struct ModData {
     pub power_poles: Vec<PowerPoleInfo>,
     pub chests: Vec<ChestInfo>,
     pub belts: Vec<BeltInfo>,
+    pub solar_panels: Vec<SolarPanelInfo>,
 
     pub items: Vec<ItemInfo>,
     pub recipes: Vec<RecipeInfo>,
@@ -51,6 +52,7 @@ impl DataStore {
                         power_poles,
                         chests,
                         belts,
+                        solar_panels,
 
                         items: _,
                         recipes: _,
@@ -80,6 +82,9 @@ impl DataStore {
                             );
 
                             (&belt_info.entity_info, EntityPrototypeKind::Belt)
+                        }))
+                        .chain(solar_panels.iter().map(|solar_info| {
+                            (&solar_info.entity_info, EntityPrototypeKind::SolarPanel)
                         }))
                         .map(move |(entity_info, kind)| crate::EntityInfo {
                             size: entity_info.size,

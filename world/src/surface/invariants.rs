@@ -5,6 +5,10 @@ use crate::surface::Surface;
 
 impl Surface {
     pub(crate) fn check_invariants(&self) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+
         // Check pole connections
         for (e, pole) in self
             .world

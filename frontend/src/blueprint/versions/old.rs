@@ -12,6 +12,7 @@ use data::{
         chest::ChestTy,
         inserter::InserterTy,
         power_pole::PowerPoleTy,
+        solar_panel::SolarPanelTy,
     },
     spacial::{Direction, Flipped, Position, Rotation},
 };
@@ -382,15 +383,30 @@ impl Into<super::Blueprint> for Blueprint {
                                             GlobalTy::try_from(EntityIdentifier::new_raw(ty))
                                                 .expect("Entity does not exist"),
                                         )
-                                        .expect("Entity name is not an chest"),
+                                        .expect("Entity name is not a chest"),
                                     },
                                 },
                             },
                         ),
-                        BlueprintPlaceEntity::SolarPanel { pos, ty } => {
-                            // TODO:
-                            None
-                        },
+                        BlueprintPlaceEntity::SolarPanel { pos, ty } => state.insert(
+                            pos,
+                            ActionKind::PlaceBuilding {
+                                ghost: true,
+                                force: ForceKind::None,
+                                building_info: BuildingInfo {
+                                    position: pos,
+                                    rotation: Rotation::North,
+                                    flipped: Flipped::unflipped(),
+                                    kind: BuildingKind::SolarPanel {
+                                        ty: SolarPanelTy::try_from(
+                                            GlobalTy::try_from(EntityIdentifier::new_raw(ty))
+                                                .expect("Entity does not exist"),
+                                        )
+                                        .expect("Entity name is not a solar panel"),
+                                    },
+                                },
+                            },
+                        ),
                         BlueprintPlaceEntity::Accumulator { pos, ty } => {
                             // TODO:
                             None

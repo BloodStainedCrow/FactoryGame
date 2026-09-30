@@ -5,6 +5,7 @@ use crate::{
     power_grid::{PowerGridBackendID, inserter::store::InserterStore},
 };
 
+use data::entity::solar_panel::num_solar_panel_tys;
 use middle_indices::PowerGridMiddleID;
 
 pub struct PowerGridAdditionInfo {
@@ -30,6 +31,7 @@ impl Backend {
             middle_id: *middle_id,
             assemblers: BTreeMap::new(),
             inserters: InserterStore::default(),
+            solar_panel_counts: vec![0; num_solar_panel_tys()].into(),
         });
 
         AdditionResult::Added {

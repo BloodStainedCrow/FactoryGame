@@ -14,6 +14,7 @@ use crate::{
             chest::ChestInfo,
             inserter::{InserterInfo, InserterMovementTime},
             power_pole::PowerPoleInfo,
+            solar_panel::SolarPanelInfo,
         },
         item::{ItemIdentifier, ItemName},
         recipe::RecipeName,
@@ -89,6 +90,36 @@ static DATA_STORE: LazyLock<DataStore> = LazyLock::new(|| {
     let mod_ident = ModIdentifier("factory_game".to_string());
     DataStore::from_mods(&[ModData {
         mod_name: mod_ident.clone(),
+
+        solar_panels: vec![
+            SolarPanelInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 3,
+                        height: 3,
+                    },
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("solar_panel".to_string()),
+                    display_name: "Solar Panel".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+            SolarPanelInfo {
+                entity_info: api::entity::EntityInfo {
+                    size: Extent {
+                        width: 2,
+                        height: 2,
+                    },
+                    can_be_rotated: false,
+                    can_be_flipped: false,
+                    name: EntityName("infinity_battery".to_string()),
+                    display_name: "Infinity Battery".to_string(),
+                    placement_rules: PlacementRules::no_restriction(),
+                },
+            },
+        ],
+
         inserters: vec![InserterInfo {
             entity_info: api::entity::EntityInfo {
                 size: Extent::single_tile(),

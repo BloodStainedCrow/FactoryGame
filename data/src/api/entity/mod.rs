@@ -5,10 +5,10 @@ pub mod belt;
 pub mod chest;
 pub mod inserter;
 pub mod power_pole;
+pub mod solar_panel;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct EntityInfo {
-    // TODO: Add bounding box types
     pub size: Extent,
 
     #[serde(default)]

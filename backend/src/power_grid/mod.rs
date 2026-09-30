@@ -10,6 +10,7 @@ pub mod assembler;
 pub mod inserter;
 pub mod merge;
 pub mod power_mult;
+pub mod solar_panel;
 pub mod split;
 mod update;
 
@@ -24,6 +25,7 @@ pub(super) struct PowerGrid {
     middle_id: PowerGridMiddleID,
     assemblers: BTreeMap<Recipe, StableVec<SingleRecipeAssemblerInfo>>,
     inserters: InserterStore,
+    solar_panel_counts: Box<[u32]>,
 }
 
 #[derive(Debug, Clone)]

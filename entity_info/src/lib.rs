@@ -3,7 +3,7 @@ use std::iter;
 use data::{
     entity::{
         GlobalTy, assember::AssemblerTy, belt::BeltTy, bounding_box, chest::ChestTy,
-        inserter::InserterTy, power_pole::PowerPoleTy,
+        inserter::InserterTy, power_pole::PowerPoleTy, solar_panel::SolarPanelTy,
     },
     spacial::{BoundingBox, Flipped, Position, Rotation},
 };
@@ -30,6 +30,7 @@ impl EntityInfo {
             EntityInfoKind::Chest { ty, .. } => ty.into(),
             EntityInfoKind::Inserter { ty, .. } => ty.into(),
             EntityInfoKind::Belt { ty, .. } => ty.into(),
+            EntityInfoKind::SolarPanel { ty, .. } => ty.into(),
         }
     }
 
@@ -40,7 +41,9 @@ impl EntityInfo {
             EntityInfoKind::PowerPole { .. }
             | EntityInfoKind::Chest { .. }
             | EntityInfoKind::Belt { .. } => false,
-            EntityInfoKind::Assembler { .. } | EntityInfoKind::Inserter { .. } => true,
+            EntityInfoKind::Assembler { .. }
+            | EntityInfoKind::Inserter { .. }
+            | EntityInfoKind::SolarPanel { .. } => true,
         }
     }
 }
@@ -69,6 +72,9 @@ pub enum EntityInfoKind {
     Belt {
         ty: BeltTy,
         middle_id: BeltTileMiddleID,
+    },
+    SolarPanel {
+        ty: SolarPanelTy,
     },
 }
 

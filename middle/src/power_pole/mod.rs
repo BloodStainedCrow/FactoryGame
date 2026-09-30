@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, hash::Hash, iter};
+use std::{collections::BTreeMap, hash::Hash, iter, num::NonZero};
 
 use backend::{
     Backend,
@@ -7,10 +7,11 @@ use backend::{
         assembler::FullAssemblerIdentifier,
         inserter::FullInserterIdentifier,
         merge::PowerGridMergeResult,
+        solar_panel::SolarPanelAdditionInfo,
         split::{PowerGridSplitInfo, PowerGridSplitResult},
     },
 };
-use data::spacial::Position;
+use data::{entity::solar_panel::SolarPanelTy, spacial::Position};
 use entity_info::{EntityDescriptor, EntityDescriptorKind};
 use indexmap::{IndexMap, map::Entry::Vacant};
 use itertools::{Either, Itertools};
@@ -30,6 +31,20 @@ pub(crate) struct MiddlePowerPoleInfo {
     connections: SmallVec<[PowerPoleMiddleID; AUTOMATIC_POLE_CONNECTION_LIMIT]>,
     pub(crate) connected_things: SmallVec<[PowerPoleConnectedThing; 2]>,
     grid_id: PowerGridMiddleID,
+    solar_panels: SolarPanelCount,
+}
+
+// TODO: Make this smaller
+#[derive(Debug, Clone)]
+enum SolarPanelCount {
+    None,
+    SingleKind {
+        ty: SolarPanelTy,
+        count: NonZero<u16>,
+    },
+    ManyKinds {
+        kinds: Box<BTreeMap<SolarPanelTy, u16>>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -253,23 +268,37 @@ impl Middle {
             connections,
             connected_things,
             grid_id: middle_grid_id,
+            solar_panels: SolarPanelCount::None,
         });
 
         assert_eq!(index, real_index);
 
         for transfer in connected_entities {
+            let old_grid = if let Some(old_pole) = transfer.prev_pole {
+                self.get_pole_power_grid(old_pole)
+            } else {
+                UNATTACHED_POWER_GRID_ID
+            };
+
             if let Some(old_pole) = transfer.prev_pole {
-                self.power_pole_list[old_pole.0 as usize]
-                    .connected_things
-                    .retain(|v| {
-                        *v != transfer
-                            .entity
-                            .get_pole_connection()
-                            .expect("Entity without power support")
-                    });
+                if transfer.entity.kind == (EntityDescriptorKind::SolarPanel {}) {
+                    self.remove_solar_panel_from_pole(
+                        old_pole,
+                        transfer.entity.ty.try_into().unwrap(),
+                    );
+                } else {
+                    self.power_pole_list[old_pole.0 as usize]
+                        .connected_things
+                        .retain(|v| {
+                            *v != transfer
+                                .entity
+                                .get_pole_connection()
+                                .expect("Entity without power support")
+                        });
+                }
             }
 
-            self.make_entity_powered_by_grid(transfer.entity, middle_grid_id, backend);
+            self.make_entity_powered_by_grid(transfer.entity, old_grid, middle_grid_id, backend);
         }
 
         // #[cfg(debug_assertions)]
@@ -361,13 +390,13 @@ impl Middle {
         info: PowerPoleRemovalInfo<impl IntoIterator<Item = EntityPowerPoleTransfer>>,
         backend: &mut Backend,
     ) {
-        let pole = self
+        let removed_pole = self
             .power_pole_list
             .remove(info.id.0 as usize)
             .expect("Tried to remove pole that does not exist");
 
         // Remove the removed pole from the connected poles' connection lists
-        for &connected in &pole.connections {
+        for &connected in &removed_pole.connections {
             assert_ne!(connected, info.id, "Power pole connected to itself");
 
             self.power_pole_list[connected.0 as usize]
@@ -381,7 +410,12 @@ impl Middle {
             let new_grid = transfer.new_pole.map_or(UNATTACHED_POWER_GRID_ID, |pole| {
                 self.power_pole_list[pole.0 as usize].grid_id
             });
-            self.make_entity_powered_by_grid(transfer.entity, new_grid, backend);
+            self.make_entity_powered_by_grid(
+                transfer.entity,
+                removed_pole.grid_id,
+                new_grid,
+                backend,
+            );
 
             if let Some(new_pole) = transfer.new_pole {
                 self.power_pole_list[new_pole.0 as usize]
@@ -390,9 +424,9 @@ impl Middle {
             }
         }
 
-        let grid = &mut self.power_grid_list[pole.grid_id.0 as usize];
+        let grid = &mut self.power_grid_list[removed_pole.grid_id.0 as usize];
 
-        match pole.connections.len() {
+        match removed_pole.connections.len() {
             0 => {
                 // This is the last pole of this grid. Remove it.
                 backend.remove_power_grid(grid.backend_id);
@@ -402,7 +436,7 @@ impl Middle {
             },
             2.. => {
                 let components = connected_components_for_poles::<PowerPoleMiddleID, _>(
-                    &pole.connections,
+                    &removed_pole.connections,
                     |node| {
                         self.power_pole_list[node.0 as usize]
                             .connections
@@ -527,9 +561,13 @@ impl Middle {
     fn make_entity_powered_by_grid(
         &mut self,
         entity: EntityDescriptor,
+        old_grid: PowerGridMiddleID,
         new_grid: PowerGridMiddleID,
         backend: &mut Backend,
     ) {
+        let old_grid_backend = self.power_grid_list[old_grid.0 as usize].backend_id;
+        let new_grid_backend = self.power_grid_list[new_grid.0 as usize].backend_id;
+
         match entity.kind {
             EntityDescriptorKind::Assembler { id: middle_id, .. } => {
                 let info = &mut self.assembler_list[middle_id.0 as usize];
@@ -543,7 +581,7 @@ impl Middle {
                         grid: current_grid_backend,
                         assembler_id: info.backend_id,
                     },
-                    self.power_grid_list[new_grid.0 as usize].backend_id,
+                    new_grid_backend,
                 ) {
                     backend::AdditionResult::Added {
                         new_id,
@@ -553,14 +591,10 @@ impl Middle {
                         info.power_grid_id = new_grid;
                         self.handle_assembler_relocations(relocations);
                     },
-                    backend::AdditionResult::Failed { info: _ } => todo!(),
                 }
             },
             EntityDescriptorKind::Inserter { id: middle_id, .. } => {
                 let info = &self.inserter_list[middle_id.0 as usize];
-
-                let current_grid_backend =
-                    self.power_grid_list[info.power_grid_id.0 as usize].backend_id;
 
                 let sources = info
                     .sources
@@ -568,14 +602,14 @@ impl Middle {
 
                 match backend.move_inserter_into_new_grid(
                     FullInserterIdentifier {
-                        grid: current_grid_backend,
+                        grid: old_grid_backend,
                         inserter_id: info.backend_id,
                         inferred_items: &info.inferred_items,
                         source: sources,
                         dest: info.dest.map(|dest| self.get_backend_conn(dest)),
                         movetime: info.movetime,
                     },
-                    self.power_grid_list[new_grid.0 as usize].backend_id,
+                    new_grid_backend,
                 ) {
                     backend::AdditionResult::Added {
                         new_id,
@@ -589,14 +623,85 @@ impl Middle {
                             todo!("Handle relocations")
                         }
                     },
-                    backend::AdditionResult::Failed { info: _ } => todo!(),
                 }
             },
-            EntityDescriptorKind::SolarPanel { .. } => todo!(),
+            EntityDescriptorKind::SolarPanel { .. } => {
+                backend.remove_solar_panel(SolarPanelAdditionInfo {
+                    ty: entity.ty.try_into().unwrap(),
+                    grid: old_grid_backend,
+                });
+
+                backend.add_solar_panel(SolarPanelAdditionInfo {
+                    ty: entity.ty.try_into().unwrap(),
+                    grid: new_grid_backend,
+                });
+            },
             EntityDescriptorKind::PowerPole { .. }
             | EntityDescriptorKind::Chest { .. }
             | EntityDescriptorKind::Belt { .. }
             | EntityDescriptorKind::Pipe { .. } => unreachable!(),
+        }
+    }
+
+    pub(crate) fn add_solar_panel_to_pole(
+        &mut self,
+        pole: PowerPoleMiddleID,
+        ty: SolarPanelTy,
+    ) -> PowerGridMiddleID {
+        let pole = &mut self.power_pole_list[pole.0 as usize];
+
+        match &mut pole.solar_panels {
+            SolarPanelCount::None => {
+                pole.solar_panels = SolarPanelCount::SingleKind {
+                    ty,
+                    count: NonZero::new(1).unwrap(),
+                }
+            },
+            SolarPanelCount::SingleKind {
+                ty: stored_ty,
+                count,
+            } => {
+                if ty == *stored_ty {
+                    *count = count.checked_add(1).unwrap()
+                } else {
+                    pole.solar_panels = SolarPanelCount::ManyKinds {
+                        kinds: Box::new(
+                            vec![(*stored_ty, (*count).into()), (ty, 1)]
+                                .into_iter()
+                                .collect(),
+                        ),
+                    }
+                }
+            },
+            SolarPanelCount::ManyKinds { kinds } => {
+                *kinds.entry(ty).or_default() += 1;
+            },
+        }
+
+        pole.grid_id
+    }
+
+    pub(crate) fn remove_solar_panel_from_pole(
+        &mut self,
+        pole: PowerPoleMiddleID,
+        ty: SolarPanelTy,
+    ) {
+        let pole = &mut self.power_pole_list[pole.0 as usize];
+
+        match &mut pole.solar_panels {
+            SolarPanelCount::None => {
+                unreachable!()
+            },
+            SolarPanelCount::SingleKind {
+                ty: stored_ty,
+                count,
+            } => {
+                assert_eq!(*stored_ty, ty);
+                *count = NonZero::new(u16::from(*count) - 1).unwrap();
+            },
+            SolarPanelCount::ManyKinds { kinds } => {
+                *kinds.get_mut(&ty).unwrap() -= 1;
+            },
         }
     }
 }

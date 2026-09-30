@@ -7,6 +7,7 @@ use data::{
         chest::ChestTy,
         inserter::InserterTy,
         power_pole::PowerPoleTy,
+        solar_panel::SolarPanelTy,
     },
     spacial::{Flipped, NonSnappingPosition, Offset, Position, Rotation},
 };
@@ -108,6 +109,7 @@ impl BuildingKind {
             Self::Belt { ty } => GlobalTy::from(*ty),
             Self::UndergroundBelt { ty } => GlobalTy::from(*ty),
             Self::Beacon { ty } => GlobalTy::from(*ty),
+            Self::SolarPanel { ty } => GlobalTy::from(*ty),
         }
     }
 }
@@ -136,6 +138,9 @@ pub(crate) enum BuildingKind {
     },
     Beacon {
         ty: BeaconTy,
+    },
+    SolarPanel {
+        ty: SolarPanelTy,
     },
 }
 
@@ -176,6 +181,9 @@ impl GameState {
                 let top_left = position;
 
                 match kind {
+                    &BuildingKind::SolarPanel { ty } => {
+                        surface.add_solar_panel(ty, top_left, rotation, flipped)?
+                    },
                     &BuildingKind::Assembler {
                         ty,
                         recipe,

@@ -43,6 +43,7 @@ use data::{
         extent,
         inserter::InserterTy,
         power_pole::PowerPoleTy,
+        solar_panel::SolarPanelTy,
     },
     spacial::{Extent, Flipped, Position, Rotation},
 };
@@ -290,6 +291,10 @@ fn building_kind_for(
 
     if let Ok(ty) = BeaconTy::try_from(global_ty) {
         return Ok(BuildingKind::Beacon { ty });
+    }
+
+    if let Ok(ty) = SolarPanelTy::try_from(global_ty) {
+        return Ok(BuildingKind::SolarPanel { ty });
     }
 
     Err(missing(format!(

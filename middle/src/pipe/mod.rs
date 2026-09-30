@@ -60,9 +60,6 @@ impl Middle {
             },
             Err(None) => {
                 // TODO: Create New Grid
-                
-
-                
             },
             Err(Some(_)) => {
                 match connections

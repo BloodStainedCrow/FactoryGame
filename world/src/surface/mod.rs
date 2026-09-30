@@ -10,6 +10,7 @@ use data::{
         chest::{ChestTy, num_slots},
         inserter::{InserterTy, get_input_position, get_output_position},
         power_pole::{PowerPoleTy, power_pole_supply_area, power_pole_wire_connection_area},
+        solar_panel::SolarPanelTy,
     },
     item::item_set::LimitedItemSet,
     spacial::{BoundingBox, Extent, Flipped, Position, Rotation},
@@ -26,6 +27,7 @@ use middle::{
         AUTOMATIC_POLE_CONNECTION_LIMIT, EntityPowerPoleTransfer, PowerPoleAdditionInfo,
         PowerPoleRemovalInfo, PowerPoleTransfer,
     },
+    solar_panel::SolarPanelAdditionInfo,
 };
 use middle_indices::ChestMiddleID;
 use smallvec::SmallVec;
@@ -121,7 +123,12 @@ impl Surface {
                             .collect(),
                         middle_id: id,
                     },
-                    EntityDescriptorKind::SolarPanel {} => todo!(),
+                    EntityDescriptorKind::SolarPanel {} => EntityInfoKind::SolarPanel {
+                        ty: desc
+                            .ty
+                            .try_into()
+                            .expect("SolarPanel with non SolarPanelTy"),
+                    },
                 },
             })
     }
@@ -162,6 +169,38 @@ impl Surface {
         // }
 
         Ok(bounding_box)
+    }
+
+    /// # Errors
+    /// If placing this entity is not legal
+    pub fn add_solar_panel(
+        &mut self,
+        ty: SolarPanelTy,
+        top_left: Position,
+        rotation: Rotation,
+        flipped: Flipped,
+    ) -> Result<(), PlaceEntityError> {
+        log::trace!("Add solar panel with ty {ty:?} at {top_left:?}");
+        let bounding_box = self.follows_rules(ty.into(), top_left, rotation, flipped)?;
+
+        // Placement is allowed. Do the placing
+
+        let pole = self.world.get_pole_for_entity_bounding_box(bounding_box);
+
+        self.middle
+            .add_solar_panel(SolarPanelAdditionInfo { ty, pole }, &mut self.backend);
+
+        self.world.add_entity(EntityDescriptor {
+            position: top_left,
+            rotation,
+            flipped,
+            ty: ty.into(),
+            kind: EntityDescriptorKind::SolarPanel {},
+        });
+
+        self.check_invariants();
+
+        Ok(())
     }
 
     /// # Errors

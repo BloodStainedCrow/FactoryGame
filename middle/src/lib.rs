@@ -23,6 +23,7 @@ pub mod invariant;
 pub mod pipe;
 pub mod power_grid;
 pub mod power_pole;
+pub mod solar_panel;
 
 #[expect(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
