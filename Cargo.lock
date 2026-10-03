@@ -1752,6 +1752,7 @@ dependencies = [
  "proptest",
  "rand 0.10.1",
  "serde",
+ "simple_logger",
  "thiserror 2.0.20",
  "toml",
  "world",

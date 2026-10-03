@@ -7,6 +7,7 @@ use proptest::{
     prelude::*,
     test_runner::{Config, FileFailurePersistence, TestError, TestRunner},
 };
+use simple_logger::SimpleLogger;
 use world::surface::{Surface, SurfaceCreationOptions};
 
 datatest_stable::harness! {
@@ -117,6 +118,8 @@ fn should_not_be_applicable_to_modset(
     path: &Path,
     contents: String,
 ) -> datatest_stable::Result<()> {
+    SimpleLogger::new().env().init().unwrap();
+
     let res = parse_blueprint(path, contents);
 
     match res {
@@ -126,6 +129,8 @@ fn should_not_be_applicable_to_modset(
 }
 
 fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
+    SimpleLogger::new().env().init().unwrap();
+
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();
 
@@ -133,6 +138,8 @@ fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<
 }
 
 fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
+    SimpleLogger::new().env().init().unwrap();
+
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();
 

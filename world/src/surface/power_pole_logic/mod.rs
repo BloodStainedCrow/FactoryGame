@@ -43,6 +43,7 @@ impl SurfaceWorld {
         self.get_entities_in_area(entity_bb.extend_evenly(power_pole_search_range()))
             .filter_map(|e| match e.kind {
                 entity_info::EntityDescriptorKind::PowerPole { .. } => {
+                    assert_ne!(e.bounding_box(), entity_bb);
                     if power_pole_supply_area(
                         e.ty.try_into().expect("Illegal PowerPoleTy"),
                         e.position,

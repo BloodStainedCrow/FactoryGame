@@ -68,7 +68,7 @@ impl GetPoleConn for EntityDescriptor {
             | EntityDescriptorKind::Chest { .. } => None,
             EntityDescriptorKind::Assembler { id } => Some(PowerPoleConnectedThing::Assembler(id)),
             EntityDescriptorKind::Inserter { id } => Some(PowerPoleConnectedThing::Inserter(id)),
-            EntityDescriptorKind::SolarPanel { .. } => todo!(),
+            EntityDescriptorKind::SolarPanel { .. } => None,
         }
     }
 }
@@ -648,6 +648,7 @@ impl Middle {
         pole: PowerPoleMiddleID,
         ty: SolarPanelTy,
     ) -> PowerGridMiddleID {
+        dbg!(pole);
         let pole = &mut self.power_pole_list[pole.0 as usize];
 
         match &mut pole.solar_panels {
@@ -685,7 +686,8 @@ impl Middle {
         &mut self,
         pole: PowerPoleMiddleID,
         ty: SolarPanelTy,
-    ) {
+    ) -> PowerGridMiddleID {
+        log::trace!("Removing panel of ty {ty:?} from pole {pole:?}");
         let pole = &mut self.power_pole_list[pole.0 as usize];
 
         match &mut pole.solar_panels {
@@ -697,12 +699,17 @@ impl Middle {
                 count,
             } => {
                 assert_eq!(*stored_ty, ty);
-                *count = NonZero::new(u16::from(*count) - 1).unwrap();
+                match NonZero::new(u16::from(*count) - 1) {
+                    Some(new) => *count = new,
+                    None => pole.solar_panels = SolarPanelCount::None,
+                }
             },
             SolarPanelCount::ManyKinds { kinds } => {
                 *kinds.get_mut(&ty).unwrap() -= 1;
             },
         }
+
+        pole.grid_id
     }
 }
 
@@ -712,7 +719,10 @@ enum ConnCompResult<T> {
     Multiple(Vec<Vec<T>>),
 }
 
-pub fn connected_components_for_poles<T: Copy + Eq + Ord + Hash, I: IntoIterator<Item = T>>(
+pub(crate) fn connected_components_for_poles<
+    T: Copy + Eq + Ord + Hash,
+    I: IntoIterator<Item = T>,
+>(
     starts: &[T],
     neighbors: impl Fn(&T) -> I + Copy,
 ) -> ConnCompResult<T> {

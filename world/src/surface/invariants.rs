@@ -22,12 +22,13 @@ impl Surface {
                 )
             })
         {
-            let thing = e.get_pole_connection().unwrap();
-            if let Some(pole) = pole {
-                self.middle.assert_pole_contains_thing(pole, thing);
-                self.middle.assert_pole_and_thing_agree_on_grid(pole, thing);
-            } else {
-                self.middle.assert_thing_unconnected(thing);
+            if let Some(thing) = e.get_pole_connection() {
+                if let Some(pole) = pole {
+                    self.middle.assert_pole_contains_thing(pole, thing);
+                    self.middle.assert_pole_and_thing_agree_on_grid(pole, thing);
+                } else {
+                    self.middle.assert_thing_unconnected(thing);
+                }
             }
         }
     }

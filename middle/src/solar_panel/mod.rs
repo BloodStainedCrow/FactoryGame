@@ -22,4 +22,15 @@ impl Middle {
 
         backend.add_solar_panel(BackendSolarPanelAdditionInfo { ty: info.ty, grid });
     }
+
+    pub fn remove_solar_panel(&mut self, info: SolarPanelAdditionInfo, backend: &mut Backend) {
+        let grid = match info.pole {
+            Some(pole) => self.remove_solar_panel_from_pole(pole, info.ty),
+            None => UNATTACHED_POWER_GRID_ID,
+        };
+
+        let grid = self.power_grid_list[grid.0 as usize].backend_id;
+
+        backend.remove_solar_panel(BackendSolarPanelAdditionInfo { ty: info.ty, grid });
+    }
 }

@@ -17,6 +17,7 @@ use data::{
 };
 use entity_info::{EntityDescriptor, EntityDescriptorKind, EntityInfo, EntityInfoKind};
 use itertools::Itertools;
+use log::trace;
 use middle::{
     Middle,
     assembler::{AssemblerAdditionInfo, AssemblerRemovalInfo, InserterTransfer},
@@ -197,6 +198,12 @@ impl Surface {
             ty: ty.into(),
             kind: EntityDescriptorKind::SolarPanel {},
         });
+
+        assert!(self.get_entity_at(top_left).is_some());
+        assert_eq!(
+            self.get_entity_at(top_left).unwrap().kind,
+            EntityDescriptorKind::SolarPanel {}
+        );
 
         self.check_invariants();
 
@@ -475,17 +482,26 @@ impl Surface {
             kind: EntityDescriptorKind::PowerPole { id: index },
         });
 
+        assert!(self.get_entity_at(top_left).is_some());
+        assert!(matches!(
+            self.get_entity_at(top_left).unwrap().kind,
+            EntityDescriptorKind::PowerPole { .. }
+        ));
+
         self.check_invariants();
 
         Ok(())
     }
 
     pub fn remove_entity_at(&mut self, position: Position) -> Result<(), RemoveEntityError> {
+        trace!("Removing entity at {position:?}");
         self.check_invariants();
 
         let Some(entity) = self.world.remove_entity_at(position) else {
             return Err(RemoveEntityError::NoEntity(position));
         };
+
+        trace!("Removed a {:?}", entity.kind);
 
         match entity.kind {
             EntityDescriptorKind::Assembler { id } => {
@@ -640,7 +656,19 @@ impl Surface {
                     &mut self.backend,
                 );
             },
-            EntityDescriptorKind::SolarPanel {} => todo!(),
+            EntityDescriptorKind::SolarPanel {} => {
+                let pole = self
+                    .world
+                    .get_pole_for_entity_bounding_box(entity.bounding_box());
+
+                self.middle.remove_solar_panel(
+                    SolarPanelAdditionInfo {
+                        ty: entity.ty.try_into().expect("Non SolarPanelTy solar panel"),
+                        pole,
+                    },
+                    &mut self.backend,
+                );
+            },
         }
 
         self.check_invariants();
