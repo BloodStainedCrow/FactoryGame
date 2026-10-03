@@ -256,11 +256,7 @@ impl Middle {
         let connected_entities = connected_entities.into_iter().collect_vec();
         let connected_things = connected_entities
             .iter()
-            .map(|e| {
-                e.entity
-                    .get_pole_connection()
-                    .expect("Entity without power support")
-            })
+            .filter_map(|e| e.entity.get_pole_connection())
             .collect();
 
         let real_index = self.power_pole_list.push(MiddlePowerPoleInfo {
@@ -272,6 +268,7 @@ impl Middle {
         });
 
         assert_eq!(index, real_index);
+        let new_id = PowerPoleMiddleID(index.try_into().expect("More than u32::MAX power poles"));
 
         for transfer in connected_entities {
             let old_grid = if let Some(old_pole) = transfer.prev_pole {
@@ -279,6 +276,10 @@ impl Middle {
             } else {
                 UNATTACHED_POWER_GRID_ID
             };
+
+            if transfer.entity.kind == (EntityDescriptorKind::SolarPanel {}) {
+                self.add_solar_panel_to_pole(new_id, transfer.entity.ty.try_into().unwrap());
+            }
 
             if let Some(old_pole) = transfer.prev_pole {
                 if transfer.entity.kind == (EntityDescriptorKind::SolarPanel {}) {
@@ -333,7 +334,7 @@ impl Middle {
         //     );
         // }
 
-        PowerPoleMiddleID(index.try_into().expect("More than u32::MAX power poles"))
+        new_id
     }
 
     // FIXME: This is recursive and may cause a stack overflow for large grids!
@@ -648,7 +649,6 @@ impl Middle {
         pole: PowerPoleMiddleID,
         ty: SolarPanelTy,
     ) -> PowerGridMiddleID {
-        dbg!(pole);
         let pole = &mut self.power_pole_list[pole.0 as usize];
 
         match &mut pole.solar_panels {

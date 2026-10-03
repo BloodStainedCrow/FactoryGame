@@ -3,6 +3,7 @@ use std::path::Path;
 use data::spacial::{BoundingBox, Extent, Position};
 use frontend::blueprint::{Blueprint, string::BlueprintString};
 use frontend::{ActionKind, GameState, SurfaceId};
+use log::LevelFilter;
 use proptest::{
     prelude::*,
     test_runner::{Config, FileFailurePersistence, TestError, TestRunner},
@@ -118,7 +119,11 @@ fn should_not_be_applicable_to_modset(
     path: &Path,
     contents: String,
 ) -> datatest_stable::Result<()> {
-    SimpleLogger::new().env().init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Warn)
+        .env()
+        .init()
+        .unwrap();
 
     let res = parse_blueprint(path, contents);
 
@@ -129,7 +134,11 @@ fn should_not_be_applicable_to_modset(
 }
 
 fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
-    SimpleLogger::new().env().init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Warn)
+        .env()
+        .init()
+        .unwrap();
 
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();
@@ -138,7 +147,11 @@ fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<
 }
 
 fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
-    SimpleLogger::new().env().init().unwrap();
+    SimpleLogger::new()
+        .with_level(LevelFilter::Warn)
+        .env()
+        .init()
+        .unwrap();
 
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();
