@@ -157,7 +157,9 @@ impl Chunk {
         let pos_in_chunk =
             PosInChunk::try_from_real(base_pos, position).expect("Position not in chunk");
 
-        if let Some(single) = &mut self.single_kind_optimization {
+        if let Some(single) = &mut self.single_kind_optimization
+            && *single.spots.get(usize::from(pos_in_chunk.0)).unwrap()
+        {
             single.spots.set(usize::from(pos_in_chunk.0), false);
             let (rotation, flipped) = single.rotation.into();
 
