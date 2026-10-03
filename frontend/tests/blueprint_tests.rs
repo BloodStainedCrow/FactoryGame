@@ -119,26 +119,26 @@ fn should_not_be_applicable_to_modset(
     path: &Path,
     contents: String,
 ) -> datatest_stable::Result<()> {
-    SimpleLogger::new()
+    let _ = SimpleLogger::new()
+        .with_utc_timestamps()
         .with_level(LevelFilter::Warn)
         .env()
-        .init()
-        .unwrap();
+        .init();
 
     let res = parse_blueprint(path, contents);
 
     match res {
         Ok(_) => Err(format!("Parsed but should be rejected by modset").into()),
-        Err(e) => Ok(()),
+        Err(_e) => Ok(()),
     }
 }
 
 fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<()> {
-    SimpleLogger::new()
+    let _ = SimpleLogger::new()
+        .with_utc_timestamps()
         .with_level(LevelFilter::Warn)
         .env()
-        .init()
-        .unwrap();
+        .init();
 
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();
@@ -147,11 +147,11 @@ fn should_be_accepted(path: &Path, contents: String) -> datatest_stable::Result<
 }
 
 fn should_be_rejected(path: &Path, contents: String) -> datatest_stable::Result<()> {
-    SimpleLogger::new()
+    let _ = SimpleLogger::new()
+        .with_utc_timestamps()
         .with_level(LevelFilter::Warn)
         .env()
-        .init()
-        .unwrap();
+        .init();
 
     let blueprint = parse_blueprint(path, contents)?;
     let actions: Vec<_> = blueprint.get_actions().collect();

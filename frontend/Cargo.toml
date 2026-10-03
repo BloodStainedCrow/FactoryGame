@@ -13,7 +13,7 @@ itertools = "0.15.0"
 log = "0.4.33"
 rand = "0.10.1"
 serde = { version = "1.0.228", features = ["derive"] }
-simple_logger = "5.2.0"
+simple_logger = { version = "5.2.0", features = ["timestamps"] }
 thiserror = "2.0.20"
 toml = "0.8"
 world = { path = "../world" } 
