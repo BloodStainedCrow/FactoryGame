@@ -41,6 +41,12 @@ impl MonotonicPowerTick {
     }
 }
 
+impl RealTick {
+    pub fn move_back_in_time(self, ticks: u16) -> Self {
+        Self(self.0 - ticks)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::cmp::min;

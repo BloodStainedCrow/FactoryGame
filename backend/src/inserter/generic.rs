@@ -4,6 +4,7 @@ use data::item::{
     Item, ItemCountType, ItemStack,
     item_set::{ItemSet, ItemSetTrait},
 };
+use itertools::Either;
 use middle_indices::InserterMiddleID;
 use stable_vec::StableVec;
 
@@ -13,6 +14,7 @@ use crate::{
         bucket::Bucket,
         power_tick::{MonotonicPowerTick, NoTick, PowerMult, RealTick, Tick},
     },
+    power_grid::inserter::InserterBackendID,
 };
 
 #[derive(Debug, Clone)]
@@ -70,6 +72,10 @@ impl<H: Copy> From<(InserterState<H>, &MonotonicPowerTick, u16)> for InserterRen
     }
 }
 
+pub struct CanonicalInserter {
+    pub middle_id: InserterMiddleID,
+}
+
 impl<I: InserterKindTrait> InserterStore<I> {
     pub fn new(kind: I, movetime: u16) -> Self {
         Self {
@@ -83,6 +89,7 @@ impl<I: InserterKindTrait> InserterStore<I> {
         }
     }
 
+    // TODO: What if source == dest, then this signature will not work
     fn update(&mut self, power_mult: PowerMult, source: &mut I::Source, dest: &mut I::Dest) {
         match self.power_timer.advance(power_mult) {
             Ok(Tick) => {},
@@ -94,9 +101,14 @@ impl<I: InserterKindTrait> InserterStore<I> {
         let now_waiting_for_items = self.incoming_buckets.advance();
 
         for arrived in now_waiting_for_items {
+            let id = arrived.get_id();
             match self.kind.try_take_item(arrived) {
                 Ok(going_out) => {
                     self.outgoing_buckets.add(going_out);
+
+                    self.inserters[id.0 as usize].state = State::Outgoing(todo!());
+                    self.inserters[id.0 as usize].time_updated =
+                        self.power_timer.get_current_real();
                 },
                 Err(()) => {
                     // Was added to waitlist
@@ -107,9 +119,14 @@ impl<I: InserterKindTrait> InserterStore<I> {
         let now_going_back = self.outgoing_buckets.advance();
 
         for arrived in now_going_back {
+            let id = arrived.get_id();
             match self.kind.try_insert_item(arrived) {
                 Ok(going_out) => {
                     self.incoming_buckets.add(going_out);
+
+                    self.inserters[id.0 as usize].state = State::Incoming;
+                    self.inserters[id.0 as usize].time_updated =
+                        self.power_timer.get_current_real();
                 },
                 Err(()) => {
                     // Was added to waitlist
@@ -119,10 +136,94 @@ impl<I: InserterKindTrait> InserterStore<I> {
     }
 
     /// The caller must first check the waitlists this inserter is attached to, to prevent long waiting inserters from misreporting!
-    fn get_state(&self, id: InserterMiddleID) -> InserterRenderState<I::Hand> {
+    fn get_state_after_checking_waitlist(
+        &self,
+        id: InserterBackendID,
+    ) -> InserterRenderState<I::Hand> {
         let ins = self.inserters[id.0 as usize];
 
         (ins, &self.power_timer, self.movetime).into()
+    }
+
+    pub fn add_inserter(&mut self, inserter: CanonicalInserter) -> InserterBackendID {
+        let middle_id_index = self.middle_ids.push(inserter.middle_id);
+
+        let id = InserterBackendID(
+            middle_id_index
+                .try_into()
+                .expect("More than u32::MAX inserters"),
+        );
+
+        let (state, bucket, progress_along) = self.kind.get_state(inserter, id);
+        match &state {
+            State::Outgoing(_) => {
+                let Either::Left(bucket) = bucket else {
+                    unreachable!()
+                };
+                self.outgoing_buckets.add_at(bucket, progress_along.into());
+            },
+            State::Incoming => {
+                let Either::Right(bucket) = bucket else {
+                    unreachable!()
+                };
+                self.incoming_buckets.add_at(bucket, progress_along.into());
+            },
+        }
+
+        let index = self.inserters.push(InserterState {
+            time_updated: self
+                .power_timer
+                .get_current_real()
+                .move_back_in_time(progress_along),
+            state,
+        });
+
+        assert_eq!(index, middle_id_index);
+
+        id
+    }
+
+    pub fn remove_inserter(
+        &mut self,
+        id: InserterBackendID,
+        token_already_removed: Option<Either<I::WaitingForItems, I::WaitingForSpaceInDestination>>,
+    ) -> CanonicalInserter {
+        let state = self.get_state_after_checking_waitlist(id);
+        let _inserter = self
+            .inserters
+            .remove(id.0 as usize)
+            .expect("Tried to remove inserter that did not exist");
+        let middle_id = self
+            .middle_ids
+            .remove(id.0 as usize)
+            .expect("Tried to remove inserter that did not exist");
+
+        if let Some(waitlist_token) = token_already_removed {
+            self.kind.get_full_from_token(middle_id, waitlist_token)
+        } else {
+            match state {
+                // TODO: We should be able to calculate the bucket to avoid searching
+                InserterRenderState::FullAndMovingOut(_, _) => {
+                    let bucket = self
+                        .outgoing_buckets
+                        .remove_first(|b| b.get_id() == id)
+                        .expect("Where else would it be?");
+
+                    self.kind
+                        .get_full_from_bucket(middle_id, Either::Right(bucket))
+                },
+                InserterRenderState::EmptyAndMovingBack(_) => {
+                    let bucket = self
+                        .incoming_buckets
+                        .remove_first(|b| b.get_id() == id)
+                        .expect("Where else would it be?");
+
+                    self.kind
+                        .get_full_from_bucket(middle_id, Either::Left(bucket))
+                },
+                _ => unreachable!(),
+            }
+        }
     }
 }
 
@@ -132,10 +233,10 @@ trait InserterKindTrait {
 
     type Hand: Copy;
 
-    type EmptyAndMovingBack;
-    type FullAndGoingOut;
-    type WaitingForItems;
-    type WaitingForSpaceInDestination;
+    type EmptyAndMovingBack: BucketInfo;
+    type FullAndGoingOut: BucketInfo;
+    type WaitingForItems: WaitlistToken;
+    type WaitingForSpaceInDestination: WaitlistToken;
 
     // TODO: What if something does not have a waitlist?
     fn try_take_item(&self, arrived: Self::EmptyAndMovingBack)
@@ -145,6 +246,36 @@ trait InserterKindTrait {
         &self,
         arrived: Self::FullAndGoingOut,
     ) -> Result<Self::EmptyAndMovingBack, ()>;
+
+    fn get_full_from_token(
+        &self,
+        middle_id: InserterMiddleID,
+        token: Either<Self::WaitingForItems, Self::WaitingForSpaceInDestination>,
+    ) -> CanonicalInserter;
+
+    fn get_full_from_bucket(
+        &self,
+        middle_id: InserterMiddleID,
+        bucket: Either<Self::EmptyAndMovingBack, Self::FullAndGoingOut>,
+    ) -> CanonicalInserter;
+
+    fn get_state(
+        &self,
+        inserter: CanonicalInserter,
+        id: InserterBackendID,
+    ) -> (
+        State<Self::Hand>,
+        Either<Self::FullAndGoingOut, Self::EmptyAndMovingBack>,
+        u16,
+    );
+}
+
+trait WaitlistToken {
+    fn get_kind(&self) -> !;
+}
+
+trait BucketInfo {
+    fn get_id(&self) -> InserterBackendID;
 }
 
 trait ItemSourceProvider {

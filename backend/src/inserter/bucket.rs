@@ -20,6 +20,10 @@ impl<T> Bucket<T> {
         self.values.push_back(value);
     }
 
+    pub fn add_at(&mut self, value: T, elapsed: usize) {
+        todo!()
+    }
+
     pub fn remove_first(&mut self, filter: impl Fn(&T) -> bool) -> Option<T> {
         let pos: u32 = self
             .values
