@@ -48,6 +48,8 @@ impl InserterStore {
 
                 id
             },
+            InserterKind::SushiBeltToSushiChestSingleItem { .. } => todo!(),
+            InserterKind::SushiChestToSushiBeltSingleItem { .. } => todo!(),
             InserterKind::SushiToSushiSingleItem { .. } => todo!(),
             InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
             InserterKind::OneToPureBeltSingleItem { .. } => todo!(),
@@ -72,6 +74,8 @@ impl InserterStore {
                 // CORRECTNESS: We checked waitlist before
                 self.pure_to_pure[&item][&movetime].get_state_after_checking_waitlist(id)
             },
+            InserterKind::SushiBeltToSushiChestSingleItem { .. } => todo!(),
+            InserterKind::SushiChestToSushiBeltSingleItem { .. } => todo!(),
             InserterKind::SushiToSushiSingleItem { .. } => todo!(),
             InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
             InserterKind::OneToPureBeltSingleItem { .. } => todo!(),
@@ -115,6 +119,8 @@ impl InserterStore {
                     },
                 }
             },
+            InserterKind::SushiBeltToSushiChestSingleItem { .. } => todo!(),
+            InserterKind::SushiChestToSushiBeltSingleItem { .. } => todo!(),
             InserterKind::SushiToSushiSingleItem { .. } => todo!(),
             InserterKind::PureBeltToOneSingleItem { .. } => todo!(),
             InserterKind::OneToPureBeltSingleItem { .. } => todo!(),

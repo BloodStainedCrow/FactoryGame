@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 7b13f0c4d0800c9205e9b824d4a2b4467fc0210a9776bd3a16f2f9055d21fc54 # shrinks to pole_positions = [(6, 17)], entity_pos = (1, 12)
+cc 94d88a34a52859f23889620df308e1efe37612ae9d5f138944cc0b55f16c93ad # shrinks to pole_positions = [(4, 13)], entity_pos = (4, 13)

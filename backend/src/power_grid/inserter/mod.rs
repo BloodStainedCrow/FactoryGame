@@ -179,6 +179,27 @@ pub enum InserterKind {
         dest: u32,
         movetime: u16,
     },
+
+    SushiBeltToSushiChestSingleItem {
+        item: Item,
+        source_belt: TransportLineBackendID,
+        dest_chest: u32,
+    },
+    SushiChestToSushiBeltSingleItem {
+        item: Item,
+        source_chest: u32,
+        dest_belt: TransportLineBackendID,
+    },
+    // SushiBeltToPureChestSingleItem {
+    //     item: Item,
+    //     source_belt: TransportLineBackendID,
+    //     dest_chest: SingleItemSlotIndex,
+    // },
+    // PureChestToSushiBeltSingleItem {
+    //     item: Item,
+    //     source_chest: SingleItemSlotIndex,
+    //     dest_belt: TransportLineBackendID,
+    // },
 }
 
 impl InserterKind {
@@ -264,10 +285,24 @@ impl InserterKind {
                         dest_pos,
                         movetime,
                     },
-                    (InserterConnection::SushiBelt { .. }, _) => todo!("Support belt inserters"),
-                    (_, Some(InserterConnection::SushiBelt { .. })) => {
-                        todo!("Support belt inserters")
+                    (
+                        InserterConnection::SushiBelt { id, .. },
+                        Some(InserterConnection::SushiChest { index }),
+                    ) => Self::SushiBeltToSushiChestSingleItem {
+                        item,
+                        source_belt: *id,
+                        dest_chest: index,
                     },
+                    (
+                        InserterConnection::SushiChest { index, .. },
+                        Some(InserterConnection::SushiBelt { id, .. }),
+                    ) => Self::SushiChestToSushiBeltSingleItem {
+                        item,
+                        source_chest: *index,
+                        dest_belt: id,
+                    },
+
+                    c => todo!("{c:?}"),
                 },
 
                 _ => todo!(),

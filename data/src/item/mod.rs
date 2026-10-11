@@ -9,12 +9,21 @@ pub mod item_set;
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
-pub struct Item(pub(crate) u16);
+pub struct Item(pub u16);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ItemStack {
     pub item: Item,
     pub count: NonZero<ItemCountType>,
+}
+
+impl ItemStack {
+    pub fn increase_count(self, additional: ItemCountType) -> Self {
+        Self {
+            item: self.item,
+            count: self.count.checked_add(additional).unwrap(),
+        }
+    }
 }
 
 #[must_use]

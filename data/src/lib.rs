@@ -1,4 +1,5 @@
 #![feature(int_roundings)]
+#![feature(min_adt_const_params)]
 
 use std::{
     cmp::max,
